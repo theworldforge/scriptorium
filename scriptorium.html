@@ -1,0 +1,1137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#e0cfaa">
+<title>Scriptorium</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Cinzel:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f5edd8; --surface: #ede0c4; --surface-hover: #e4d5b0;
+    --border: #c9b48a; --border-light: #dcc99d;
+    --text: #2c1f0e; --text-muted: #7a6040; --text-faint: #a08050;
+    --accent: #8b3a1a; --accent-text: #fff8f0;
+    --canvas: #fdf6e3; --canvas-border: #c9b48a;
+    --panel: #ede0c4; --header: #e0cfaa;
+    --shadow: rgba(44,31,14,0.13);
+    --tag: #8b3a1a22;
+    --font-body: 'Crimson Pro', Georgia, 'Times New Roman', serif;
+    --font-display: 'Cinzel', Georgia, serif;
+  }
+
+  body {
+    font-family: var(--font-body);
+    background: var(--bg);
+    color: var(--text);
+    height: 100dvh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Scrollbars ── */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* ── Placeholders ── */
+  ::placeholder { font-style: italic; opacity: 0.45; color: var(--text-faint); }
+
+  /* ── HEADER ── */
+  #header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 16px; height: 48px; flex-shrink: 0;
+    background: var(--header); border-bottom: 1px solid var(--border);
+    box-shadow: 0 1px 8px var(--shadow);
+  }
+  #header .logo {
+    font-family: var(--font-display); font-size: 17px; font-weight: 600;
+    letter-spacing: 0.12em; color: var(--accent); white-space: nowrap;
+  }
+  .spacer { flex: 1; }
+  .hdr-stat { font-size: 13px; color: var(--text-muted); font-style: italic; white-space: nowrap; }
+  .sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; flex-shrink: 0; }
+  .icon-btn {
+    background: none; border: none; cursor: pointer; color: var(--text-muted);
+    font-size: 16px; padding: 4px 7px; border-radius: 5px; line-height: 1;
+    transition: background 0.15s, color 0.15s; font-family: var(--font-body);
+  }
+  .icon-btn:hover { background: var(--surface-hover); }
+  .icon-btn.active { background: var(--tag); }
+  .theme-label { font-size: 12px; color: var(--text-faint); white-space: nowrap; }
+
+  /* Drive status */
+  #drive-btn {
+    display: flex; align-items: center; gap: 5px;
+    padding: 4px 10px; border-radius: 5px; border: 1px solid var(--border);
+    background: none; cursor: pointer; font-family: var(--font-body);
+    font-size: 12px; color: var(--text-muted); transition: all 0.15s; white-space: nowrap;
+  }
+  #drive-btn:hover { background: var(--surface-hover); }
+  #drive-btn.synced { border-color: #4a9a5a; color: #3a7a48; }
+  #drive-btn.syncing { border-color: var(--accent); color: var(--accent); }
+  #drive-btn.error { border-color: #c44; color: #c44; }
+  #drive-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--border); flex-shrink: 0; }
+  #drive-btn.synced #drive-dot { background: #4a9a5a; }
+  #drive-btn.syncing #drive-dot { background: var(--accent); animation: pulse 1s infinite; }
+  #drive-btn.error #drive-dot { background: #c44; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+
+  /* ── BODY ── */
+  #body { display: flex; flex: 1; overflow: hidden; }
+
+  /* ── LEFT PANEL ── */
+  #left-panel {
+    width: 240px; flex-shrink: 0;
+    background: var(--panel); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow: hidden;
+    transition: width 0.25s, min-width 0.25s;
+  }
+  #left-panel.closed { width: 0; }
+  .panel-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px; border-bottom: 1px solid var(--border-light);
+    background: var(--header); flex-shrink: 0;
+  }
+  .panel-label {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.1em;
+    color: var(--text-faint); text-transform: uppercase;
+  }
+  .small-btn {
+    background: var(--accent); color: var(--accent-text);
+    border: none; border-radius: 4px; padding: 3px 9px;
+    cursor: pointer; font-size: 11px; font-family: var(--font-body);
+    transition: opacity 0.15s;
+  }
+  .small-btn:hover { opacity: 0.85; }
+  #tree-scroll { overflow-y: auto; flex: 1; padding: 6px 4px; }
+
+  /* Tree nodes */
+  .tree-story-label {
+    padding: 6px 8px 2px; font-size: 11px; font-weight: 700;
+    color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.1em;
+  }
+  .tree-node {
+    display: flex; align-items: center; gap: 5px;
+    border-radius: 6px; cursor: pointer;
+    font-size: 13px; font-family: var(--font-body);
+    user-select: none; transition: background 0.12s; position: relative;
+    color: var(--text);
+  }
+  .tree-node:hover { background: var(--surface-hover); }
+  .tree-node.selected { background: var(--accent); color: var(--accent-text); }
+  .tree-node .node-icon { font-size: 11px; flex-shrink: 0; }
+  .tree-node .node-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tree-node .node-wc { font-size: 10px; opacity: 0.55; white-space: nowrap; }
+  .tree-node .node-actions { display: none; gap: 1px; flex-shrink: 0; }
+  .tree-node:hover .node-actions { display: flex; }
+  .node-act-btn {
+    background: none; border: none; cursor: pointer; color: inherit;
+    font-size: 11px; padding: 1px 3px; border-radius: 3px; opacity: 0.7;
+    font-family: var(--font-body); line-height: 1;
+  }
+  .node-act-btn:hover { opacity: 1; background: rgba(0,0,0,0.08); }
+  .node-act-btn.del { color: #c44 !important; }
+  .tree-node input.rename-input {
+    background: transparent; border: none; border-bottom: 1px solid var(--accent);
+    color: inherit; font-size: 13px; font-family: inherit; outline: none;
+    width: 100%; padding: 0 2px; flex: 1;
+  }
+
+  /* ── CANVAS AREA ── */
+  #canvas-area {
+    flex: 1; display: flex; justify-content: center;
+    overflow-y: auto; padding: 28px 20px; background: var(--bg);
+  }
+  #canvas-wrap { display: flex; flex-direction: column; max-width: 100%; }
+  #width-control {
+    display: flex; align-items: center; justify-content: flex-end;
+    gap: 8px; margin-bottom: 8px;
+  }
+  #width-control label { font-size: 11px; color: var(--text-faint); }
+  #width-slider { width: 100px; accent-color: var(--accent); cursor: pointer; }
+  #canvas {
+    background: var(--canvas); border: 1px solid var(--canvas-border);
+    border-radius: 8px; padding: 40px 48px;
+    box-shadow: 0 2px 24px var(--shadow);
+    display: flex; flex-direction: column;
+    min-height: calc(100dvh - 160px);
+  }
+  #scene-title-input {
+    background: transparent; border: none; outline: none;
+    color: var(--text); font-family: var(--font-body);
+    font-size: 22px; font-weight: 600; width: 100%;
+    margin-bottom: 6px;
+  }
+  #scene-wc { font-size: 12px; color: var(--text-faint); margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border-light); }
+  #scene-textarea {
+    flex: 1; background: transparent; border: none; outline: none;
+    resize: none; color: var(--text);
+    font-family: var(--font-body); font-size: 18px; line-height: 1.85;
+    min-height: 400px;
+  }
+  #canvas-empty {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; flex: 1; gap: 12px; opacity: 0.35;
+  }
+  #canvas-empty .big-glyph { font-size: 52px; }
+  #canvas-empty p { font-size: 18px; font-style: italic; }
+
+  /* ── RIGHT PANEL ── */
+  #right-panel {
+    width: 260px; flex-shrink: 0;
+    background: var(--panel); border-left: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow: hidden;
+    transition: width 0.25s;
+  }
+  #right-panel.closed { width: 0; }
+  #notes-list { display: flex; flex-direction: column; padding: 6px 4px; flex-shrink: 0; }
+  .note-row {
+    display: flex; align-items: center; gap: 4px;
+    padding: 5px 8px; cursor: pointer; border-radius: 5px;
+    font-size: 13px; font-family: var(--font-body);
+    transition: background 0.12s; color: var(--text);
+  }
+  .note-row:hover { background: var(--surface-hover); }
+  .note-row.selected { background: var(--accent); color: var(--accent-text); }
+  .note-row .note-title-span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .note-del { background: none; border: none; cursor: pointer; color: inherit; font-size: 11px; padding: 1px 3px; opacity: 0.5; font-family: var(--font-body); }
+  .note-del:hover { opacity: 1; color: #c44; }
+  #note-editor { padding: 12px; border-top: 1px solid var(--border-light); flex: 1; display: flex; flex-direction: column; gap: 8px; }
+  #note-title-input {
+    background: transparent; border: none; border-bottom: 1px solid var(--border);
+    color: var(--text); font-family: var(--font-body); font-size: 14px; font-weight: 600;
+    outline: none; width: 100%; padding-bottom: 4px;
+  }
+  #note-content-area {
+    flex: 1; background: transparent; border: none; outline: none; resize: none;
+    color: var(--text); font-family: var(--font-body); font-size: 13px; line-height: 1.65;
+    min-height: 150px;
+  }
+
+  /* ── DRIVE MODAL ── */
+  #drive-modal {
+    display: none; position: fixed; inset: 0; z-index: 1000;
+    background: rgba(0,0,0,0.55); align-items: center; justify-content: center;
+  }
+  #drive-modal.open { display: flex; }
+  #drive-modal-box {
+    background: var(--canvas); border: 1px solid var(--border);
+    border-radius: 10px; padding: 28px 32px; max-width: 420px; width: 90%;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.2);
+  }
+  #drive-modal-box h2 { font-family: var(--font-display); font-size: 18px; color: var(--accent); margin-bottom: 8px; }
+  #drive-modal-box p { font-size: 14px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px; }
+  .modal-row { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .modal-btn {
+    background: var(--accent); color: var(--accent-text); border: none;
+    border-radius: 6px; padding: 8px 16px; cursor: pointer;
+    font-family: var(--font-body); font-size: 14px; transition: opacity 0.15s;
+  }
+  .modal-btn:hover { opacity: 0.85; }
+  .modal-btn.secondary {
+    background: transparent; color: var(--text-muted);
+    border: 1px solid var(--border);
+  }
+  #folder-path-display {
+    font-size: 12px; color: var(--text-faint); font-style: italic;
+    padding: 6px 0; border-top: 1px solid var(--border-light); margin-top: 8px;
+  }
+  #drive-log { font-size: 12px; color: var(--text-muted); margin-top: 10px; min-height: 20px; font-style: italic; }
+
+  /* ── TOAST ── */
+  #toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--text); color: var(--bg); padding: 8px 18px;
+    border-radius: 20px; font-size: 13px; opacity: 0;
+    transition: opacity 0.3s, transform 0.3s; pointer-events: none; z-index: 2000;
+    white-space: nowrap;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ── MOBILE ── */
+  #mobile-tabbar {
+    display: none; border-top: 1px solid var(--border);
+    background: var(--header); flex-shrink: 0;
+  }
+  .mob-tab {
+    flex: 1; padding: 10px 4px 8px; background: transparent; border: none;
+    cursor: pointer; font-family: var(--font-body); font-size: 11px;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    color: var(--text-muted); transition: background 0.15s, color 0.15s;
+  }
+  .mob-tab.active { background: var(--accent); color: var(--accent-text); }
+  .mob-tab .tab-icon { font-size: 19px; line-height: 1; }
+
+  #mobile-scenes, #mobile-notes { display: none; flex: 1; overflow-y: auto; }
+
+  .mob-scene-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 13px 28px; border-bottom: 1px solid var(--border-light);
+    cursor: pointer; font-size: 15px; transition: background 0.12s;
+  }
+  .mob-scene-row:hover { background: var(--surface-hover); }
+  .mob-scene-row.active { background: var(--accent); color: var(--accent-text); }
+  .mob-scene-wc { font-size: 12px; opacity: 0.6; }
+
+  .mob-section-label {
+    padding: 10px 16px 4px; font-size: 11px; font-weight: 700;
+    color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.1em;
+  }
+  .mob-chapter-label { padding: 5px 22px 2px; font-size: 12px; color: var(--text-faint); }
+
+  .mob-notes-pills {
+    display: flex; overflow-x: auto; padding: 6px 8px; gap: 6px;
+    border-bottom: 1px solid var(--border); background: var(--panel); flex-shrink: 0;
+  }
+  .mob-pill {
+    white-space: nowrap; padding: 6px 14px; border-radius: 16px; border: none;
+    cursor: pointer; font-family: var(--font-body); font-size: 14px;
+    background: var(--surface); color: var(--text); transition: all 0.12s;
+  }
+  .mob-pill.active { background: var(--accent); color: var(--accent-text); }
+  .mob-pill.add-pill { background: transparent; border: 1px dashed var(--border); color: var(--text-faint); }
+
+  /* ── FOCUS MODE ── */
+  body.focus-mode #left-panel,
+  body.focus-mode #right-panel { width: 0; }
+  body.focus-mode #canvas-area { padding: 32px 40px; }
+
+  /* ── THEMES ── */
+  body.theme-dark {
+    --bg: #161412; --surface: #1e1b17; --surface-hover: #272319;
+    --border: #3a3228; --border-light: #302a20;
+    --text: #e8dcc8; --text-muted: #9a8870; --text-faint: #6a5a48;
+    --accent: #c47840; --accent-text: #1a1208;
+    --canvas: #1a1714; --canvas-border: #3a3228;
+    --panel: #1e1b17; --header: #161412;
+    --shadow: rgba(0,0,0,0.4); --tag: #c4784022;
+  }
+  body.theme-light {
+    --bg: #f0ede8; --surface: #faf9f7; --surface-hover: #f0ede8;
+    --border: #d8d2c8; --border-light: #e4e0d8;
+    --text: #1a1814; --text-muted: #6a6258; --text-faint: #9a9288;
+    --accent: #2d5a8e; --accent-text: #ffffff;
+    --canvas: #ffffff; --canvas-border: #d8d2c8;
+    --panel: #f5f3f0; --header: #ebe8e2;
+    --shadow: rgba(26,24,20,0.1); --tag: #2d5a8e18;
+  }
+
+  /* mobile overrides */
+  @media (max-width: 767px) {
+    #left-panel, #right-panel { display: none !important; }
+    #mobile-tabbar { display: flex; }
+    #header { height: 44px; padding: 0 12px; }
+    #header .logo { font-size: 14px; }
+    .hdr-stat { font-size: 11px; }
+    #drive-btn { font-size: 11px; padding: 3px 7px; }
+    #canvas-area { padding: 0; }
+    #canvas { border-radius: 0; border-left: none; border-right: none; border-top: none; min-height: unset; padding: 16px; }
+    #scene-textarea { font-size: 17px; min-height: 60vh; }
+    #width-control { display: none; }
+    #canvas-wrap { width: 100% !important; }
+    body.focus-mode #mobile-tabbar { display: none; }
+  }
+</style>
+</head>
+<body class="theme-parchment">
+
+<!-- HEADER -->
+<div id="header">
+  <div class="logo">✦ SCRIPTORIUM</div>
+  <div class="spacer"></div>
+  <div class="hdr-stat" id="total-wc">0 words total</div>
+  <div class="sep"></div>
+  <button class="icon-btn active" id="btn-left" title="Toggle structure">⊞</button>
+  <button class="icon-btn active" id="btn-right" title="Toggle notes">📎</button>
+  <button class="icon-btn" id="btn-focus" title="Focus mode">⊙</button>
+  <div class="sep"></div>
+  <button id="drive-btn" title="Google Drive sync">
+    <span id="drive-dot"></span>
+    <span id="drive-label">Drive</span>
+  </button>
+  <div class="sep"></div>
+  <button class="icon-btn" id="btn-theme" title="Switch theme">☀</button>
+  <span class="theme-label" id="theme-label">Parchment</span>
+</div>
+
+<!-- BODY -->
+<div id="body">
+
+  <!-- LEFT PANEL -->
+  <div id="left-panel">
+    <div class="panel-header">
+      <span class="panel-label">Structure</span>
+      <button class="small-btn" id="btn-add-story">+ Story</button>
+    </div>
+    <div id="tree-scroll"></div>
+  </div>
+
+  <!-- CANVAS -->
+  <div id="canvas-area">
+    <div id="canvas-wrap">
+      <div id="width-control">
+        <label for="width-slider">Width: <span id="width-val">680</span>px</label>
+        <input type="range" id="width-slider" min="400" max="1200" value="680">
+      </div>
+      <div id="canvas">
+        <div id="canvas-empty">
+          <div class="big-glyph">✦</div>
+          <p>Select a scene to begin writing</p>
+        </div>
+        <input type="text" id="scene-title-input" placeholder="Scene title" style="display:none">
+        <div id="scene-wc" style="display:none"></div>
+        <textarea id="scene-textarea" placeholder="Begin writing…" style="display:none"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div id="right-panel">
+    <div class="panel-header">
+      <span class="panel-label">Notes & Research</span>
+      <button class="small-btn" id="btn-add-note">+ Note</button>
+    </div>
+    <div id="notes-list"></div>
+    <div id="note-editor" style="display:none">
+      <input type="text" id="note-title-input" placeholder="Note title">
+      <textarea id="note-content-area" placeholder="Research notes, character details, world-building…"></textarea>
+    </div>
+  </div>
+
+</div><!-- /body -->
+
+<!-- MOBILE TAB BAR -->
+<div id="mobile-tabbar">
+  <button class="mob-tab active" data-tab="write">
+    <span class="tab-icon">✦</span><span>Write</span>
+  </button>
+  <button class="mob-tab" data-tab="scenes">
+    <span class="tab-icon">⊞</span><span>Scenes</span>
+  </button>
+  <button class="mob-tab" data-tab="notes">
+    <span class="tab-icon">📎</span><span>Notes</span>
+  </button>
+</div>
+
+<!-- Mobile scenes / notes panels (outside #body so they can be full-height) -->
+<div id="mobile-scenes"></div>
+<div id="mobile-notes"></div>
+
+<!-- DRIVE MODAL -->
+<div id="drive-modal">
+  <div id="drive-modal-box">
+    <h2>Google Drive Sync</h2>
+    <p>Save your stories to Google Drive so they're available on any device. You'll need to authorise access and choose a folder.</p>
+    <div class="modal-row">
+      <button class="modal-btn" id="drive-auth-btn">Connect Google Drive</button>
+      <button class="modal-btn secondary" id="drive-modal-close">Cancel</button>
+    </div>
+    <div id="folder-path-display"></div>
+    <div id="drive-log"></div>
+    <hr style="border:none;border-top:1px solid var(--border-light);margin:14px 0">
+    <p style="font-size:13px;color:var(--text-faint);">Already have a backup file? Import it:</p>
+    <div class="modal-row">
+      <button class="modal-btn secondary" id="drive-import-btn">Load from Drive</button>
+      <button class="modal-btn secondary" id="local-export-btn">Export JSON</button>
+      <button class="modal-btn secondary" id="local-import-btn">Import JSON</button>
+    </div>
+    <input type="file" id="import-file-input" accept=".json" style="display:none">
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// DATA
+// ═══════════════════════════════════════════════════════════════
+const STORAGE_KEY = 'scriptorium-data';
+const SETTINGS_KEY = 'scriptorium-settings';
+
+const DEFAULT_DATA = {
+  stories: [{
+    id: 's1', title: 'Roman Britain Series',
+    children: [{
+      id: 'b1', title: 'Book One', type: 'book',
+      children: [
+        { id: 'c1', title: 'Chapter I – Arrival at Abona', type: 'chapter', children: [
+          { id: 'sc1', title: 'Scene 1 – The Harbour', type: 'scene', content: '', wordCount: 0 },
+          { id: 'sc2', title: 'Scene 2 – The Caupona', type: 'scene', content: '', wordCount: 0 },
+        ]},
+        { id: 'c2', title: 'Chapter II – The Missing Portitor', type: 'chapter', children: [
+          { id: 'sc3', title: 'Scene 1 – Sextus Naevius Glaucus', type: 'scene', content: '', wordCount: 0 },
+        ]},
+      ]
+    }]
+  }],
+  notes: [
+    { id: 'n1', title: 'Character: Titus', content: 'Last druid of Britannia. Telluric earth magic. Celtic knotwork tattoos. Vulnerable to enchanted iron.' },
+    { id: 'n2', title: 'Character: Hildr', content: 'Germanic shapeshifter / former gladiator. Chimeric mutations. Tall, blonde. Loyal beneath a crass exterior.' },
+    { id: 'n3', title: 'Antagonist: Lucius Cassianus Maro', content: 'Augur. Smuggling occult goods, eliminating witnesses. Has raised a Draugr from a murdered Optio.' },
+    { id: 'n4', title: 'Setting: Abona', content: 'Modern Sea Mills, Bristol. AD 112. Port on the Avon estuary. Tungrian auxiliaries stationed nearby.' },
+  ]
+};
+
+const DEFAULT_SETTINGS = { theme: 'parchment', canvasWidth: 680, leftOpen: true, rightOpen: true };
+
+let appData = loadLocal();
+let settings = loadSettings();
+let selectedSceneId = null;
+let selectedNoteId = null;
+let driveToken = null;
+let driveFolderId = null;
+let driveFolderName = null;
+let driveFileId = null;
+let autoSaveTimer = null;
+let mobileTab = 'write';
+
+function loadLocal() {
+  try { const r = localStorage.getItem(STORAGE_KEY); if (r) return JSON.parse(r); } catch {}
+  return JSON.parse(JSON.stringify(DEFAULT_DATA));
+}
+function loadSettings() {
+  try { const r = localStorage.getItem(SETTINGS_KEY); if (r) return JSON.parse(r); } catch {}
+  return { ...DEFAULT_SETTINGS };
+}
+function saveLocal() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(appData)); } catch {}
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {}
+}
+
+function uid() { return 'id' + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+function countWords(t) { if (!t) return 0; return t.trim().split(/\s+/).filter(Boolean).length; }
+
+// ── Tree helpers ──────────────────────────────────────────────
+function findNode(nodes, id) {
+  for (const n of nodes) {
+    if (n.id === id) return n;
+    if (n.children) { const f = findNode(n.children, id); if (f) return f; }
+  }
+  return null;
+}
+function updateNode(nodes, id, fn) {
+  return nodes.map(n => {
+    if (n.id === id) return { ...n, ...fn(n) };
+    if (n.children) return { ...n, children: updateNode(n.children, id, fn) };
+    return n;
+  });
+}
+function deleteNode(nodes, id) {
+  return nodes.filter(n => n.id !== id).map(n => n.children ? { ...n, children: deleteNode(n.children, id) } : n);
+}
+function addChild(nodes, parentId, newNode) {
+  return nodes.map(n => {
+    if (n.id === parentId) return { ...n, children: [...(n.children||[]), newNode] };
+    if (n.children) return { ...n, children: addChild(n.children, parentId, newNode) };
+    return n;
+  });
+}
+function totalWords(nodes) {
+  let c = 0;
+  for (const n of nodes) { if (n.type==='scene') c += n.wordCount||0; if (n.children) c += totalWords(n.children); }
+  return c;
+}
+function flatScenes(nodes, out=[]) {
+  for (const n of nodes) { if (n.type==='scene') out.push(n); if (n.children) flatScenes(n.children,out); }
+  return out;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════════════════════════════
+function render() {
+  renderTree();
+  renderNotesList();
+  renderCanvas();
+  renderMobile();
+  updateTotalWC();
+  saveLocal();
+  scheduleAutoSave();
+}
+
+// ── Total word count ──────────────────────────────────────────
+function updateTotalWC() {
+  const total = appData.stories.reduce((a,s) => a + totalWords(s.children||[]), 0);
+  document.getElementById('total-wc').textContent = total.toLocaleString() + ' words total';
+}
+
+// ── Tree ──────────────────────────────────────────────────────
+function renderTree() {
+  const scroll = document.getElementById('tree-scroll');
+  scroll.innerHTML = '';
+  for (const story of appData.stories) {
+    const lbl = document.createElement('div');
+    lbl.className = 'tree-story-label';
+    lbl.textContent = story.title;
+    scroll.appendChild(lbl);
+    for (const child of (story.children||[])) {
+      renderTreeNode(scroll, child, 0);
+    }
+  }
+}
+
+function renderTreeNode(parent, node, depth) {
+  const icons = { book:'📖', chapter:'§', scene:'✦' };
+  const childTypes = { book:'chapter', chapter:'scene' };
+
+  const row = document.createElement('div');
+  row.className = 'tree-node' + (selectedSceneId===node.id ? ' selected' : '');
+  row.style.paddingLeft = (depth*14+8)+'px';
+  row.style.paddingRight = '8px';
+  row.style.paddingTop = '5px';
+  row.style.paddingBottom = '5px';
+
+  const toggle = document.createElement('span');
+  toggle.style.fontSize = '10px'; toggle.style.opacity='0.6'; toggle.style.minWidth='10px';
+  if (node.children && node.children.length) toggle.textContent = node._collapsed ? '▸' : '▾';
+  row.appendChild(toggle);
+
+  const icon = document.createElement('span');
+  icon.className = 'node-icon'; icon.textContent = icons[node.type]||'📁';
+  row.appendChild(icon);
+
+  const label = document.createElement('span');
+  label.className = 'node-label'; label.textContent = node.title;
+  row.appendChild(label);
+
+  if (node.type==='scene' && node.wordCount>0) {
+    const wc = document.createElement('span');
+    wc.className='node-wc'; wc.textContent=node.wordCount+'w';
+    row.appendChild(wc);
+  }
+
+  const actions = document.createElement('span');
+  actions.className='node-actions';
+
+  // rename
+  const renBtn = document.createElement('button');
+  renBtn.className='node-act-btn'; renBtn.textContent='✎'; renBtn.title='Rename';
+  renBtn.onclick = e => { e.stopPropagation(); startRename(row, label, node); };
+  actions.appendChild(renBtn);
+
+  // add child
+  if (childTypes[node.type]) {
+    const addBtn = document.createElement('button');
+    addBtn.className='node-act-btn'; addBtn.textContent='+'; addBtn.title='Add '+childTypes[node.type];
+    addBtn.onclick = e => { e.stopPropagation(); addTreeNode(node.id, childTypes[node.type]); };
+    actions.appendChild(addBtn);
+  }
+
+  // delete
+  const delBtn = document.createElement('button');
+  delBtn.className='node-act-btn del'; delBtn.textContent='✕'; delBtn.title='Delete';
+  delBtn.onclick = e => { e.stopPropagation(); if(confirm('Delete "'+node.title+'"?')) { appData.stories = deleteNode(appData.stories, node.id); if(selectedSceneId===node.id) { selectedSceneId=null; } render(); } };
+  actions.appendChild(delBtn);
+
+  row.appendChild(actions);
+
+  row.onclick = () => {
+    if (node.type==='scene') { selectedSceneId=node.id; render(); }
+    else { node._collapsed=!node._collapsed; renderTree(); }
+  };
+
+  parent.appendChild(row);
+
+  if (!node._collapsed && node.children) {
+    for (const c of node.children) renderTreeNode(parent, c, depth+1);
+  }
+}
+
+function startRename(row, labelSpan, node) {
+  const inp = document.createElement('input');
+  inp.className='rename-input'; inp.value=node.title;
+  labelSpan.replaceWith(inp);
+  inp.focus(); inp.select();
+  const commit = () => {
+    node.title = inp.value || node.title;
+    render();
+  };
+  inp.onblur = commit;
+  inp.onkeydown = e => { if(e.key==='Enter') commit(); if(e.key==='Escape') render(); };
+}
+
+function addTreeNode(parentId, type) {
+  const labels = { book:'New Book', chapter:'New Chapter', scene:'New Scene' };
+  const newNode = { id:uid(), title:labels[type], type, ...(type!=='scene'?{children:[]}:{content:'',wordCount:0}) };
+  appData.stories = addChild(appData.stories, parentId, newNode);
+  if(type==='scene') selectedSceneId=newNode.id;
+  render();
+}
+
+// ── Canvas ────────────────────────────────────────────────────
+function renderCanvas() {
+  const empty = document.getElementById('canvas-empty');
+  const titleInp = document.getElementById('scene-title-input');
+  const wcDiv = document.getElementById('scene-wc');
+  const ta = document.getElementById('scene-textarea');
+
+  if (!selectedSceneId) {
+    empty.style.display='flex'; titleInp.style.display='none'; wcDiv.style.display='none'; ta.style.display='none';
+    return;
+  }
+  const scene = findNode(appData.stories, selectedSceneId);
+  if (!scene) { selectedSceneId=null; render(); return; }
+
+  empty.style.display='none';
+  titleInp.style.display=''; wcDiv.style.display=''; ta.style.display='';
+  titleInp.value=scene.title;
+  wcDiv.textContent=(scene.wordCount||0)+' words';
+  if (ta.dataset.sceneId !== scene.id) {
+    ta.value=scene.content||'';
+    ta.dataset.sceneId=scene.id;
+    ta.focus();
+  }
+}
+
+// ── Notes ────────────────────────────────────────────────────
+function renderNotesList() {
+  const list = document.getElementById('notes-list');
+  list.innerHTML='';
+  for (const note of appData.notes) {
+    const row = document.createElement('div');
+    row.className='note-row'+(selectedNoteId===note.id?' selected':'');
+    const clip = document.createElement('span'); clip.textContent='📎'; clip.style.fontSize='11px';
+    const title = document.createElement('span'); title.className='note-title-span'; title.textContent=note.title;
+    const del = document.createElement('button'); del.className='note-del'; del.textContent='✕';
+    del.onclick = e => { e.stopPropagation(); if(confirm('Delete note?')){ appData.notes=appData.notes.filter(n=>n.id!==note.id); if(selectedNoteId===note.id){selectedNoteId=null;} render(); }};
+    row.appendChild(clip); row.appendChild(title); row.appendChild(del);
+    row.onclick=()=>{ selectedNoteId=note.id; render(); };
+    list.appendChild(row);
+  }
+
+  const ed = document.getElementById('note-editor');
+  if (selectedNoteId) {
+    const note = appData.notes.find(n=>n.id===selectedNoteId);
+    if(note){
+      ed.style.display='flex';
+      const ti=document.getElementById('note-title-input');
+      const ca=document.getElementById('note-content-area');
+      if(ti.dataset.noteId!==note.id){ ti.value=note.title; ca.value=note.content; ti.dataset.noteId=note.id; }
+    }
+  } else { ed.style.display='none'; }
+}
+
+// ── Mobile ────────────────────────────────────────────────────
+function renderMobile() {
+  const isMob = window.innerWidth < 768;
+  if(!isMob) {
+    document.getElementById('mobile-scenes').style.display='none';
+    document.getElementById('mobile-notes').style.display='none';
+    document.getElementById('canvas-area').style.display='flex';
+    return;
+  }
+
+  const ca=document.getElementById('canvas-area');
+  const ms=document.getElementById('mobile-scenes');
+  const mn=document.getElementById('mobile-notes');
+
+  ca.style.display=mobileTab==='write'?'flex':'none';
+  ms.style.display=mobileTab==='scenes'?'block':'none';
+  mn.style.display=mobileTab==='notes'?'flex':'none';
+  mn.style.flexDirection='column';
+
+  if(mobileTab==='scenes') renderMobileScenes();
+  if(mobileTab==='notes') renderMobileNotes();
+}
+
+function renderMobileScenes() {
+  const ms=document.getElementById('mobile-scenes');
+  ms.innerHTML='';
+  for(const story of appData.stories){
+    const sl=document.createElement('div'); sl.className='mob-section-label'; sl.textContent=story.title;
+    ms.appendChild(sl);
+    for(const book of (story.children||[])){
+      const bl=document.createElement('div'); bl.className='mob-section-label'; bl.textContent='📖 '+book.title;
+      ms.appendChild(bl);
+      for(const ch of (book.children||[])){
+        const cl=document.createElement('div'); cl.className='mob-chapter-label'; cl.textContent='§ '+ch.title;
+        ms.appendChild(cl);
+        for(const sc of (ch.children||[])){
+          const row=document.createElement('div');
+          row.className='mob-scene-row'+(selectedSceneId===sc.id?' active':'');
+          row.innerHTML='<span>✦ '+sc.title+'</span><span class="mob-scene-wc">'+(sc.wordCount||0)+'w</span>';
+          row.onclick=()=>{ selectedSceneId=sc.id; mobileTab='write'; render(); setMobileTab('write'); };
+          ms.appendChild(row);
+        }
+      }
+    }
+  }
+}
+
+function renderMobileNotes() {
+  const mn=document.getElementById('mobile-notes');
+  mn.innerHTML='';
+  const pills=document.createElement('div'); pills.className='mob-notes-pills';
+  for(const n of appData.notes){
+    const p=document.createElement('button'); p.className='mob-pill'+(selectedNoteId===n.id?' active':'');
+    p.textContent=n.title; p.onclick=()=>{selectedNoteId=n.id;render();};
+    pills.appendChild(p);
+  }
+  const addP=document.createElement('button'); addP.className='mob-pill add-pill'; addP.textContent='+ Note';
+  addP.onclick=()=>{ const n={id:uid(),title:'New Note',content:''}; appData.notes.push(n); selectedNoteId=n.id; render(); };
+  pills.appendChild(addP);
+  mn.appendChild(pills);
+
+  if(selectedNoteId){
+    const note=appData.notes.find(n=>n.id===selectedNoteId);
+    if(note){
+      const ti=document.createElement('input'); ti.type='text'; ti.value=note.title;
+      ti.style.cssText='padding:12px 16px 8px;background:var(--canvas);border:none;border-bottom:1px solid var(--border-light);color:var(--text);font-family:var(--font-body);font-size:16px;font-weight:600;outline:none;width:100%;';
+      ti.oninput=()=>{ note.title=ti.value; saveLocal(); scheduleAutoSave(); };
+      const ta=document.createElement('textarea'); ta.value=note.content; ta.placeholder='Notes, research, character details…';
+      ta.style.cssText='flex:1;padding:14px 16px;background:var(--canvas);border:none;outline:none;resize:none;color:var(--text);font-family:var(--font-body);font-size:16px;line-height:1.7;';
+      ta.oninput=()=>{ note.content=ta.value; saveLocal(); scheduleAutoSave(); };
+      mn.appendChild(ti); mn.appendChild(ta);
+    }
+  } else {
+    const ph=document.createElement('div'); ph.style.cssText='flex:1;display:flex;align-items:center;justify-content:center;opacity:0.4;font-style:italic;'; ph.textContent='Select a note above';
+    mn.appendChild(ph);
+  }
+}
+
+function setMobileTab(tab) {
+  mobileTab=tab;
+  document.querySelectorAll('.mob-tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
+  renderMobile();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// EVENTS
+// ═══════════════════════════════════════════════════════════════
+
+// Scene textarea live update
+document.getElementById('scene-textarea').addEventListener('input', function() {
+  if(!selectedSceneId) return;
+  const wc=countWords(this.value);
+  appData.stories=updateNode(appData.stories,selectedSceneId,()=>({content:this.value,wordCount:wc}));
+  document.getElementById('scene-wc').textContent=wc+' words';
+  updateTotalWC(); saveLocal(); scheduleAutoSave();
+});
+
+// Scene title
+document.getElementById('scene-title-input').addEventListener('input', function(){
+  if(!selectedSceneId) return;
+  appData.stories=updateNode(appData.stories,selectedSceneId,()=>({title:this.value}));
+  renderTree(); saveLocal(); scheduleAutoSave();
+});
+
+// Note title/content
+document.getElementById('note-title-input').addEventListener('input', function(){
+  if(!selectedNoteId) return;
+  appData.notes=appData.notes.map(n=>n.id===selectedNoteId?{...n,title:this.value}:n);
+  renderNotesList(); saveLocal(); scheduleAutoSave();
+});
+document.getElementById('note-content-area').addEventListener('input', function(){
+  if(!selectedNoteId) return;
+  appData.notes=appData.notes.map(n=>n.id===selectedNoteId?{...n,content:this.value}:n);
+  saveLocal(); scheduleAutoSave();
+});
+
+// Width slider
+const slider=document.getElementById('width-slider');
+slider.value=settings.canvasWidth||680;
+document.getElementById('width-val').textContent=slider.value;
+document.getElementById('canvas-wrap').style.width=slider.value+'px';
+slider.addEventListener('input',function(){
+  settings.canvasWidth=+this.value;
+  document.getElementById('width-val').textContent=this.value;
+  document.getElementById('canvas-wrap').style.width=this.value+'px';
+  saveLocal();
+});
+
+// Panel toggles
+document.getElementById('btn-left').addEventListener('click',()=>{
+  settings.leftOpen=!settings.leftOpen;
+  document.getElementById('left-panel').classList.toggle('closed',!settings.leftOpen);
+  document.getElementById('btn-left').classList.toggle('active',settings.leftOpen);
+  saveLocal();
+});
+document.getElementById('btn-right').addEventListener('click',()=>{
+  settings.rightOpen=!settings.rightOpen;
+  document.getElementById('right-panel').classList.toggle('closed',!settings.rightOpen);
+  document.getElementById('btn-right').classList.toggle('active',settings.rightOpen);
+  saveLocal();
+});
+
+// Focus mode
+document.getElementById('btn-focus').addEventListener('click',()=>{
+  document.body.classList.toggle('focus-mode');
+  document.getElementById('btn-focus').classList.toggle('active',document.body.classList.contains('focus-mode'));
+});
+
+// Theme cycle
+const themes=[{id:'parchment',label:'Parchment',icon:'☀'},{id:'dark',label:'Dark',icon:'🌙'},{id:'light',label:'Light',icon:'◎'}];
+let themeIdx=themes.findIndex(t=>t.id===settings.theme)||0;
+applyTheme();
+document.getElementById('btn-theme').addEventListener('click',()=>{
+  themeIdx=(themeIdx+1)%themes.length;
+  settings.theme=themes[themeIdx].id;
+  applyTheme(); saveLocal();
+});
+function applyTheme(){
+  document.body.className=document.body.className.replace(/theme-\w+/,'').trim();
+  document.body.classList.add('theme-'+themes[themeIdx].id);
+  document.getElementById('btn-theme').textContent=themes[themeIdx].icon;
+  document.getElementById('theme-label').textContent=themes[themeIdx].label;
+  document.querySelector('meta[name="theme-color"]').content=themeIdx===1?'#161412':themeIdx===2?'#ebe8e2':'#e0cfaa';
+}
+
+// Add story
+document.getElementById('btn-add-story').addEventListener('click',()=>{
+  const ns={id:uid(),title:'New Story',children:[]};
+  appData.stories.push(ns); render();
+});
+
+// Add note
+document.getElementById('btn-add-note').addEventListener('click',()=>{
+  const n={id:uid(),title:'New Note',content:''};
+  appData.notes.push(n); selectedNoteId=n.id; render();
+});
+
+// Mobile tabs
+document.querySelectorAll('.mob-tab').forEach(b=>{
+  b.addEventListener('click',()=>setMobileTab(b.dataset.tab));
+});
+
+// Keyboard hide tab bar
+if(window.visualViewport){
+  const initH=window.visualViewport.height;
+  window.visualViewport.addEventListener('resize',()=>{
+    const kb=window.visualViewport.height<initH*0.8;
+    document.getElementById('mobile-tabbar').style.display=kb?'none':'flex';
+  });
+}
+
+// Responsive
+window.addEventListener('resize',()=>renderMobile());
+
+// ═══════════════════════════════════════════════════════════════
+// GOOGLE DRIVE SYNC
+// ═══════════════════════════════════════════════════════════════
+// Uses Google Identity Services + Drive REST API v3
+// Requires a Google Cloud project with Drive API enabled and OAuth client ID
+
+const CLIENT_ID = '645135129548-hjijbb7btjtvudfjs1nskhn21vgkhq5a.apps.googleusercontent.com'; // ← paste your Google OAuth client ID here
+const SCOPES = 'https://www.googleapis.com/auth/drive.file';
+const DRIVE_FILE_NAME = 'scriptorium-backup.json';
+const DRIVE_META_KEY = 'scriptorium-drive-meta';
+
+let tokenClient = null;
+let driveMeta = null;
+try { driveMeta = JSON.parse(localStorage.getItem(DRIVE_META_KEY)||'null'); } catch {}
+
+function setDriveStatus(state, text){
+  const btn=document.getElementById('drive-btn');
+  btn.className=''; btn.classList.add(state);
+  document.getElementById('drive-label').textContent=text||'Drive';
+}
+
+function driveLog(msg){ document.getElementById('drive-log').textContent=msg; }
+
+function scheduleAutoSave(){
+  if(!driveToken||!driveFolderId) return;
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer=setTimeout(()=>saveToDrive(true), 8000);
+}
+
+// Open modal
+document.getElementById('drive-btn').addEventListener('click',()=>{
+  document.getElementById('drive-modal').classList.add('open');
+  if(driveMeta){
+    document.getElementById('folder-path-display').textContent='Folder: '+driveMeta.folderName;
+    driveLog(driveToken?'Connected. Last save: '+(driveMeta.lastSave?new Date(driveMeta.lastSave).toLocaleString():'never'):'Token expired — reconnect to sync.');
+  }
+});
+document.getElementById('drive-modal-close').addEventListener('click',()=>{
+  document.getElementById('drive-modal').classList.remove('open');
+});
+
+// Auth + connect
+document.getElementById('drive-auth-btn').addEventListener('click',()=>{
+  if(!CLIENT_ID){
+    driveLog('No OAuth Client ID set. See setup instructions in the README.');
+    // Fallback: work without Drive
+    return;
+  }
+  if(!window.google){
+    const s=document.createElement('script');
+    s.src='https://accounts.google.com/gsi/client';
+    s.onload=()=>initTokenClient();
+    document.head.appendChild(s);
+  } else { initTokenClient(); }
+});
+
+function initTokenClient(){
+  tokenClient=google.accounts.oauth2.initTokenClient({
+    client_id:CLIENT_ID, scope:SCOPES,
+    callback:(resp)=>{
+      if(resp.error){ driveLog('Auth error: '+resp.error); return; }
+      driveToken=resp.access_token;
+      driveLog('Authorised! Choosing folder…');
+      pickFolder();
+    }
+  });
+  tokenClient.requestAccessToken();
+}
+
+function pickFolder(){
+  // Load the Picker API
+  if(!window.gapi){
+    const s=document.createElement('script');
+    s.src='https://apis.google.com/js/api.js';
+    s.onload=()=>gapi.load('picker',()=>openPicker());
+    document.head.appendChild(s);
+  } else { gapi.load('picker',()=>openPicker()); }
+}
+
+function openPicker(){
+  const picker=new google.picker.PickerBuilder()
+    .addView(new google.picker.DocsView(google.picker.ViewId.FOLDERS).setSelectFolderEnabled(true).setMimeTypes('application/vnd.google-apps.folder'))
+    .setOAuthToken(driveToken)
+    .setCallback(data=>{
+      if(data.action===google.picker.Action.PICKED){
+        const folder=data.docs[0];
+        driveFolderId=folder.id;
+        driveFolderName=folder.name;
+        driveMeta={ folderId:driveFolderId, folderName:driveFolderName, fileId:null, lastSave:null };
+        localStorage.setItem(DRIVE_META_KEY, JSON.stringify(driveMeta));
+        document.getElementById('folder-path-display').textContent='Folder: '+driveFolderName;
+        driveLog('Folder chosen. Saving now…');
+        saveToDrive(false);
+      }
+    })
+    .build();
+  picker.setVisible(true);
+}
+
+async function saveToDrive(silent){
+  if(!driveToken){ if(!silent) driveLog('Not connected. Click Connect first.'); return; }
+  if(!driveFolderId){ if(!silent) driveLog('No folder selected.'); return; }
+  if(!silent) setDriveStatus('syncing','Saving…');
+  const content=JSON.stringify({data:appData,settings},null,2);
+  const blob=new Blob([content],{type:'application/json'});
+  try {
+    if(!driveFileId && driveMeta?.fileId){ driveFileId=driveMeta.fileId; }
+    let resp;
+    if(driveFileId){
+      // Update existing
+      resp=await fetch(`https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=media`,{
+        method:'PATCH', headers:{'Authorization':'Bearer '+driveToken,'Content-Type':'application/json'},
+        body:blob
+      });
+    } else {
+      // Create new
+      const meta=JSON.stringify({name:DRIVE_FILE_NAME,parents:[driveFolderId]});
+      const form=new FormData();
+      form.append('metadata',new Blob([meta],{type:'application/json'}));
+      form.append('file',blob);
+      resp=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',{
+        method:'POST', headers:{'Authorization':'Bearer '+driveToken}, body:form
+      });
+    }
+    if(!resp.ok) throw new Error('HTTP '+resp.status);
+    const json=await resp.json();
+    driveFileId=json.id;
+    driveMeta={ ...driveMeta, fileId:driveFileId, lastSave:Date.now() };
+    localStorage.setItem(DRIVE_META_KEY, JSON.stringify(driveMeta));
+    setDriveStatus('synced','Saved ✓');
+    if(!silent){ driveLog('Saved at '+new Date().toLocaleTimeString()); toast('Saved to Drive ✓'); }
+    setTimeout(()=>{ if(document.getElementById('drive-btn').classList.contains('synced')) setDriveStatus('synced','Drive'); },3000);
+  } catch(e){
+    setDriveStatus('error','Error');
+    if(!silent) driveLog('Save failed: '+e.message);
+  }
+}
+
+async function loadFromDrive(){
+  if(!driveToken){ driveLog('Not connected.'); return; }
+  if(!driveFileId && !driveMeta?.fileId){ driveLog('No saved file found.'); return; }
+  const fid=driveFileId||driveMeta.fileId;
+  driveLog('Loading…');
+  try{
+    const resp=await fetch(`https://www.googleapis.com/drive/v3/files/${fid}?alt=media`,{
+      headers:{'Authorization':'Bearer '+driveToken}
+    });
+    if(!resp.ok) throw new Error('HTTP '+resp.status);
+    const json=await resp.json();
+    if(json.data) appData=json.data;
+    if(json.settings) settings=json.settings;
+    selectedSceneId=null; selectedNoteId=null;
+    render(); applyTheme();
+    driveLog('Loaded successfully.');
+    toast('Loaded from Drive ✓');
+    document.getElementById('drive-modal').classList.remove('open');
+  } catch(e){ driveLog('Load failed: '+e.message); }
+}
+
+document.getElementById('drive-import-btn').addEventListener('click',loadFromDrive);
+
+// Manual save button (add to modal)
+const saveNowBtn=document.createElement('button');
+saveNowBtn.className='modal-btn'; saveNowBtn.textContent='Save to Drive Now';
+saveNowBtn.onclick=()=>saveToDrive(false);
+document.querySelector('#drive-modal-box .modal-row').appendChild(saveNowBtn);
+
+// ── Local export/import fallback ─────────────────────────────
+document.getElementById('local-export-btn').addEventListener('click',()=>{
+  const blob=new Blob([JSON.stringify({data:appData,settings},null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=DRIVE_FILE_NAME; a.click(); toast('Exported ✓');
+});
+document.getElementById('local-import-btn').addEventListener('click',()=>{
+  document.getElementById('import-file-input').click();
+});
+document.getElementById('import-file-input').addEventListener('change',function(){
+  const file=this.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const json=JSON.parse(e.target.result);
+      if(json.data) appData=json.data;
+      if(json.settings) settings=json.settings;
+      selectedSceneId=null; selectedNoteId=null;
+      render(); applyTheme(); toast('Imported ✓');
+      document.getElementById('drive-modal').classList.remove('open');
+    } catch { driveLog('Invalid file.'); }
+  };
+  reader.readAsText(file);
+});
+
+// Restore Drive state
+if(driveMeta){ driveFolderId=driveMeta.folderId; driveFolderName=driveMeta.folderName; driveFileId=driveMeta.fileId; }
+
+// ═══════════════════════════════════════════════════════════════
+// TOAST
+// ═══════════════════════════════════════════════════════════════
+function toast(msg){
+  const t=document.getElementById('toast'); t.textContent=msg;
+  t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2500);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════
+// Apply saved settings
+if(!settings.leftOpen){ document.getElementById('left-panel').classList.add('closed'); document.getElementById('btn-left').classList.remove('active'); }
+if(!settings.rightOpen){ document.getElementById('right-panel').classList.add('closed'); document.getElementById('btn-right').classList.remove('active'); }
+slider.value=settings.canvasWidth||680;
+document.getElementById('width-val').textContent=slider.value;
+document.getElementById('canvas-wrap').style.width=slider.value+'px';
+themeIdx=themes.findIndex(t=>t.id===settings.theme); if(themeIdx<0)themeIdx=0; applyTheme();
+
+render();
+
+// Drive status
+if(driveMeta){ setDriveStatus('synced','Drive'); }
+</script>
+</body>
+</html>
