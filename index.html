@@ -1999,20 +1999,25 @@ function driveLog(msg){
   log.textContent=msg;log.style.display=msg?'block':'none';
 }
 async function driveSave(silent){
-  if(!driveToken||!driveFolderId){if(!silent)driveLog('Not connected or no folder set.');return;}
+  if(!driveToken){if(!silent)driveLog('Not connected or no folder set.');return;}
   if(!silent)setDriveStatus('syncing','Saving…');
   try{
     const payload=JSON.stringify(getAppData(),null,2);
     const blob=new Blob([payload],{type:'application/json'});
     let fid=driveFileId;
+    // Search for existing file
     if(!fid){
-      const q=`name='${DRIVE_FILE_NAME}' and '${driveFolderId}' in parents and trashed=false`;
-      const r=await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)`,{headers:{Authorization:'Bearer '+driveToken}});
+      const qParts=["name='"+DRIVE_FILE_NAME+"'","trashed=false"];
+      if(driveFolderId)qParts.push("'"+driveFolderId+"' in parents");
+      const q=qParts.join(' and ');
+      const r=await fetch('https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent(q)+'&fields=files(id)',{headers:{Authorization:'Bearer '+driveToken}});
       const d=await r.json();if(d.files&&d.files.length)fid=d.files[0].id;
     }
-    const url=fid?`https://www.googleapis.com/upload/drive/v3/files/${fid}?uploadType=multipart`:`https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`;
+    const metaObj=fid?{}:{name:DRIVE_FILE_NAME};
+    if(!fid&&driveFolderId)metaObj.parents=[driveFolderId];
+    const url=fid?'https://www.googleapis.com/upload/drive/v3/files/'+fid+'?uploadType=multipart':'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
     const method=fid?'PATCH':'POST';
-    const meta=new Blob([JSON.stringify(fid?{}:{name:DRIVE_FILE_NAME,parents:[driveFolderId]})],{type:'application/json'});
+    const meta=new Blob([JSON.stringify(metaObj)],{type:'application/json'});
     const form=new FormData();form.append('metadata',meta);form.append('file',blob);
     const r2=await fetch(url,{method,headers:{Authorization:'Bearer '+driveToken},body:form});
     const d2=await r2.json();driveFileId=d2.id||fid;persistMeta(new Date().toISOString());
@@ -2028,7 +2033,24 @@ document.getElementById('drive-btn').addEventListener('click',()=>{
   document.getElementById('drive-last-save').textContent='Last saved: '+getLastSave();
   if(driveToken){document.getElementById('drive-auth-status').style.display='inline';document.getElementById('drive-auth-btn').style.display='none';}
 });
-document.getElementById('drive-auth-btn').addEventListener('click',()=>{
+// ── Drive auth: popup on desktop, redirect on mobile ──
+const REDIRECT_URI=window.location.origin+window.location.pathname;
+const OAUTH_URL='https://accounts.google.com/o/oauth2/v2/auth';
+
+function isMobileDevice(){return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)||window.innerWidth<768;}
+
+function doRedirectAuth(){
+  // Save current Drive meta before leaving
+  const state=encodeURIComponent(JSON.stringify({redirect:true}));
+  const params=new URLSearchParams({
+    client_id:CLIENT_ID,redirect_uri:REDIRECT_URI,
+    response_type:'token',scope:SCOPES,
+    state,include_granted_scopes:'true',prompt:'select_account'
+  });
+  window.location.href=OAUTH_URL+'?'+params.toString();
+}
+
+function doPopupAuth(){
   function init(){
     const tc=window.google.accounts.oauth2.initTokenClient({client_id:CLIENT_ID,scope:SCOPES,callback:(resp)=>{
       if(resp.error){driveLog('Auth error: '+resp.error);return;}
@@ -2040,9 +2062,81 @@ document.getElementById('drive-auth-btn').addEventListener('click',()=>{
   }
   if(!window.google){const s=document.createElement('script');s.src='https://accounts.google.com/gsi/client';s.onload=init;document.head.appendChild(s);}
   else init();
+}
+
+// Check for redirect token in URL hash (mobile return from Google)
+(function handleRedirectToken(){
+  const hash=window.location.hash;
+  if(!hash)return;
+  const params=new URLSearchParams(hash.slice(1));
+  const token=params.get('access_token');
+  if(!token)return;
+  driveToken=token;
+  // Clean the URL
+  history.replaceState(null,'',window.location.pathname);
+  // Show connected state
+  setTimeout(()=>{
+    const authBtn=document.getElementById('drive-auth-btn');
+    const authStatus=document.getElementById('drive-auth-status');
+    if(authBtn)authBtn.style.display='none';
+    if(authStatus)authStatus.style.display='inline';
+    setDriveStatus('synced','Drive');
+    driveLog('Connected via Google. Now choose a folder.');
+    // Auto-open drive modal so user can pick folder
+    document.getElementById('drive-modal').classList.add('open');
+    if(driveFolderName){
+      const fd=document.getElementById('drive-folder-display');
+      fd.textContent='📁 '+driveFolderName;fd.style.display='block';
+      driveLog('Reconnected. Folder: '+driveFolderName+'. You can save now.');
+    }
+  },300);
+})();
+
+document.getElementById('drive-auth-btn').addEventListener('click',()=>{
+  if(!CLIENT_ID){driveLog('No OAuth Client ID configured.');return;}
+  if(isMobileDevice()){
+    driveLog('Redirecting to Google sign-in…');
+    setTimeout(doRedirectAuth,400);
+  } else {
+    doPopupAuth();
+  }
 });
 document.getElementById('drive-pick-btn').addEventListener('click',()=>{
   if(!driveToken){driveLog('Connect first.');return;}
+  if(isMobileDevice()){
+    // On mobile, Picker won't work — offer to save to Drive root or let user type folder name
+    driveLog('Finding your Drive folders…');
+    // Search for existing scriptorium folder or let user confirm saving to root
+    fetch('https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent("mimeType='application/vnd.google-apps.folder' and name='Scriptorium' and trashed=false")+'&fields=files(id,name)',
+      {headers:{Authorization:'Bearer '+driveToken}})
+      .then(r=>r.json()).then(data=>{
+        if(data.files&&data.files.length){
+          const f=data.files[0];
+          driveFolderId=f.id;driveFolderName=f.name;driveFileId=null;
+          const fd=document.getElementById('drive-folder-display');fd.textContent='📁 '+f.name;fd.style.display='block';
+          driveLog('Found Scriptorium folder. Saving…');driveSave(false);
+        } else {
+          // No Scriptorium folder — create one or save to root
+          if(confirm('No "Scriptorium" folder found in Drive.\n\nCreate one and save there?')){
+            fetch('https://www.googleapis.com/drive/v3/files',{
+              method:'POST',headers:{Authorization:'Bearer '+driveToken,'Content-Type':'application/json'},
+              body:JSON.stringify({name:'Scriptorium',mimeType:'application/vnd.google-apps.folder'})
+            }).then(r=>r.json()).then(f=>{
+              driveFolderId=f.id;driveFolderName=f.name;driveFileId=null;
+              const fd=document.getElementById('drive-folder-display');fd.textContent='📁 '+f.name;fd.style.display='block';
+              driveLog('Created Scriptorium folder. Saving…');driveSave(false);
+            }).catch(e=>driveLog('Error creating folder: '+e.message));
+          } else {
+            // Save to root
+            driveFolderId=null;driveFolderName='My Drive (root)';driveFileId=null;
+            const fd=document.getElementById('drive-folder-display');fd.textContent='📁 My Drive (root)';fd.style.display='block';
+            driveLog('Saving to Drive root…');driveSave(false);
+          }
+        }
+      }).catch(e=>driveLog('Error: '+e.message));
+    return;
+  }
+  // Desktop: use the full Picker
   function openPicker(){
     new window.google.picker.PickerBuilder()
       .addView(new window.google.picker.DocsView(window.google.picker.ViewId.FOLDERS).setSelectFolderEnabled(true).setMimeTypes('application/vnd.google-apps.folder'))
