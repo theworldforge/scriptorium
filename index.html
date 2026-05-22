@@ -1515,12 +1515,13 @@ function renderMobWrite(){
 }
 
 function openMobSceneInfo(sc){
+  document.getElementById('mob-scene-info').dataset.scid=sc.id;
   document.getElementById('mob-scene-info-title').textContent=sc.title;
-  renderMobSceneInfoContent(sc);
+  renderMobSceneInfoContent(sc.id);
   document.getElementById('mob-scene-info').classList.add('open');
 }
 document.getElementById('mob-scene-info-close').onclick=()=>{
-  saveAll(); // ensure everything is persisted before closing
+  saveAll();
   document.getElementById('mob-scene-info').classList.remove('open');
 };
 document.getElementById('mob-scene-info').onclick=e=>{
@@ -1530,31 +1531,41 @@ document.getElementById('mob-scene-info').onclick=e=>{
   }
 };
 
-function renderMobSceneInfoContent(sc){
+function renderMobSceneInfoContent(scId){
+  // Always refetch fresh scene data
+  const sc=findNode(stories,scId);
+  if(!sc)return;
   const scroll=document.getElementById('mob-scene-info-scroll');
   scroll.innerHTML='';
 
-  // Scene Notes / Summary
+  // Save button at top
+  function makeSaveBtn(closeAfter){
+    const btn=el('button');
+    btn.style.cssText='width:100%;background:var(--accent);color:var(--accent-text);border:none;border-radius:8px;padding:12px;font-family:var(--font-body);font-size:15px;font-weight:700;cursor:pointer;margin-bottom:16px;';
+    btn.textContent='💾 Save';
+    btn.onclick=()=>{saveAll();toast('Saved ✓');if(closeAfter)document.getElementById('mob-scene-info').classList.remove('open');};
+    return btn;
+  }
+  scroll.appendChild(makeSaveBtn(false));
+
+  // Scene Notes
   const noteSec=el('div','mob-info-section');
   const noteLbl=el('span','mob-info-label');noteLbl.textContent='Scene Notes & Summary';
-  const noteTa=el('textarea','mob-info-ta');noteTa.rows=4;noteTa.value=sc.sceneNotes||'';
-  noteTa.placeholder='What happens in this scene? Key beats, purpose, outcome…';
-  noteTa.oninput=()=>{
-    stories=updateNode(stories,sc.id,()=>({sceneNotes:noteTa.value}));
-    lsS(SK,stories); // immediate localStorage write, no debounce
-  };
+  const noteTa=el('textarea','mob-info-ta');noteTa.rows=5;noteTa.value=sc.sceneNotes||'';
+  noteTa.placeholder='What happens? Key beats, purpose, outcome…';
+  noteTa.oninput=()=>{stories=updateNode(stories,scId,()=>({sceneNotes:noteTa.value}));lsS(SK,stories);};
   noteSec.append(noteLbl,noteTa);scroll.appendChild(noteSec);
 
   // In-story date
   const dateSec=el('div','mob-info-section');
   const dateLbl=el('span','mob-info-label');dateLbl.textContent='In-Story Date';
   const dateInp=el('input','mob-info-inp');dateInp.type='text';dateInp.value=sc.storyDate||'';
-  dateInp.placeholder='e.g. Kal. Mar. AD 112 or Day 3';
-  dateInp.oninput=()=>{stories=updateNode(stories,sc.id,()=>({storyDate:dateInp.value}));lsS(SK,stories);};
+  dateInp.placeholder='e.g. Kal. Mar. AD 112';
+  dateInp.oninput=()=>{stories=updateNode(stories,scId,()=>({storyDate:dateInp.value}));lsS(SK,stories);};
   const orderLbl=el('span','mob-info-label');orderLbl.style.marginTop='8px';orderLbl.textContent='Timeline Sort Order';
   const orderInp=el('input','mob-info-inp');orderInp.type='number';orderInp.value=sc.storyOrder!=null?sc.storyOrder:'';
   orderInp.placeholder='1, 2, 3…';
-  orderInp.oninput=()=>{stories=updateNode(stories,sc.id,()=>({storyOrder:orderInp.value!==''?+orderInp.value:null}));lsS(SK,stories);};
+  orderInp.oninput=()=>{stories=updateNode(stories,scId,()=>({storyOrder:orderInp.value!==''?+orderInp.value:null}));lsS(SK,stories);};
   dateSec.append(dateLbl,dateInp,orderLbl,orderInp);scroll.appendChild(dateSec);
 
   // Characters in scene
@@ -1562,48 +1573,51 @@ function renderMobSceneInfoContent(sc){
   const charLbl=el('span','mob-info-label');charLbl.textContent='Characters in Scene';
   charSec.appendChild(charLbl);
   const charChips=el('div','mob-info-chips');
-  const scCharIds=sc.sceneCharIds||[];
-  for(const cid of scCharIds){
+  for(const cid of(sc.sceneCharIds||[])){
     const ch=chars.find(c=>c.id===cid);if(!ch)continue;
     const chip=el('div','mob-info-chip');
-    chip.innerHTML='<span>'+ch.name+'</span>';
+    const nm=el('span');nm.textContent=ch.name;
     const del=el('button','mob-info-chip-del');del.textContent='×';
-    del.onclick=()=>{stories=updateNode(stories,sc.id,n=>({sceneCharIds:(n.sceneCharIds||[]).filter(x=>x!==cid)}));saveAll();const sc2=findNode(stories,sc.id);if(sc2)renderMobSceneInfoContent(sc2);};
-    chip.appendChild(del);charChips.appendChild(chip);
+    del.onclick=()=>{stories=updateNode(stories,scId,n=>({sceneCharIds:(n.sceneCharIds||[]).filter(x=>x!==cid)}));lsS(SK,stories);renderMobSceneInfoContent(scId);};
+    chip.append(nm,del);charChips.appendChild(chip);
   }
   charSec.appendChild(charChips);
   const addCharBtn=el('button','mob-info-add');addCharBtn.textContent='+ Add character';
   addCharBtn.onclick=()=>{
-    const avail=chars.filter(c=>!(sc.sceneCharIds||[]).includes(c.id));
+    const fresh=findNode(stories,scId);
+    const avail=chars.filter(c=>!(fresh.sceneCharIds||[]).includes(c.id));
     if(!avail.length){toast('All characters already added');return;}
     showMobPicker(avail.map(c=>({id:c.id,label:c.name,sub:c.role,icon:c.image?null:c.name[0]})),
-      picked=>{stories=updateNode(stories,sc.id,n=>({sceneCharIds:[...(n.sceneCharIds||[]),picked.id]}));saveAll();const sc2=findNode(stories,sc.id);if(sc2)renderMobSceneInfoContent(sc2);});
+      picked=>{stories=updateNode(stories,scId,n=>({sceneCharIds:[...(n.sceneCharIds||[]),picked.id]}));lsS(SK,stories);renderMobSceneInfoContent(scId);});
   };
   charSec.appendChild(addCharBtn);scroll.appendChild(charSec);
 
-  // World elements in scene
+  // World elements
   const worldSec=el('div','mob-info-section');
   const worldLbl=el('span','mob-info-label');worldLbl.textContent='World Elements in Scene';
   worldSec.appendChild(worldLbl);
   const worldChips=el('div','mob-info-chips');
-  const scWorldIds=sc.sceneWorldIds||[];
-  for(const wid of scWorldIds){
+  for(const wid of(sc.sceneWorldIds||[])){
     const item=(world||[]).find(w=>w.id===wid);if(!item)continue;
     const chip=el('div','mob-info-chip');
     chip.innerHTML='<span>'+item.icon+'</span><span>'+item.name+'</span>';
     const del=el('button','mob-info-chip-del');del.textContent='×';
-    del.onclick=()=>{stories=updateNode(stories,sc.id,n=>({sceneWorldIds:(n.sceneWorldIds||[]).filter(x=>x!==wid)}));saveAll();const sc2=findNode(stories,sc.id);if(sc2)renderMobSceneInfoContent(sc2);};
+    del.onclick=()=>{stories=updateNode(stories,scId,n=>({sceneWorldIds:(n.sceneWorldIds||[]).filter(x=>x!==wid)}));lsS(SK,stories);renderMobSceneInfoContent(scId);};
     chip.appendChild(del);worldChips.appendChild(chip);
   }
   worldSec.appendChild(worldChips);
   const addWorldBtn=el('button','mob-info-add');addWorldBtn.textContent='+ Add world element';
   addWorldBtn.onclick=()=>{
-    const avail=(world||[]).filter(w=>!(sc.sceneWorldIds||[]).includes(w.id));
+    const fresh=findNode(stories,scId);
+    const avail=(world||[]).filter(w=>!(fresh.sceneWorldIds||[]).includes(w.id));
     if(!avail.length){toast('All elements already added');return;}
     showMobPicker(avail.map(w=>({id:w.id,label:w.name,sub:w.type,icon:w.icon})),
-      picked=>{stories=updateNode(stories,sc.id,n=>({sceneWorldIds:[...(n.sceneWorldIds||[]),picked.id]}));saveAll();const sc2=findNode(stories,sc.id);if(sc2)renderMobSceneInfoContent(sc2);});
+      picked=>{stories=updateNode(stories,scId,n=>({sceneWorldIds:[...(n.sceneWorldIds||[]),picked.id]}));lsS(SK,stories);renderMobSceneInfoContent(scId);});
   };
   worldSec.appendChild(addWorldBtn);scroll.appendChild(worldSec);
+
+  // Save + close button at bottom
+  scroll.appendChild(makeSaveBtn(true));
 }
 
 // Simple mobile picker sheet
