@@ -1733,10 +1733,10 @@ function renderMobNotes(){
   if(selNoteId){const n=notes.find(x=>x.id===selNoteId);if(n){
     const ti=document.createElement('input');ti.type='text';ti.value=n.title;
     ti.style.cssText='padding:12px 16px;background:var(--canvas);border:none;border-bottom:1px solid var(--border-light);color:var(--text);font-family:var(--font-body);font-size:16px;font-weight:600;outline:none;width:100%;';
-    ti.oninput=()=>{n.title=ti.value;saveAll();};
+    ti.oninput=()=>{n.title=ti.value;notes=notes.map(x=>x.id===n.id?{...x,title:ti.value}:x);lsS(NK,notes);};
     const ta=document.createElement('textarea');ta.value=n.content;ta.placeholder='Notes…';
     ta.style.cssText='flex:1;padding:14px 16px;background:var(--canvas);border:none;outline:none;resize:none;color:var(--text);font-family:var(--font-body);font-size:16px;line-height:1.7;';
-    ta.oninput=()=>{n.content=ta.value;saveAll();};mn.append(ti,ta);
+    ta.oninput=()=>{n.content=ta.value;notes=notes.map(x=>x.id===n.id?{...x,content:ta.value}:x);lsS(NK,notes);};mn.append(ti,ta);
   }}
 }
 // ── Mobile Characters (editable) ─────────────
@@ -1795,16 +1795,31 @@ function renderMobCharEdit(mc,ch){
     const wrap=el('div','mob-field');
     const lbl=document.createElement('label');lbl.textContent=label;wrap.appendChild(lbl);
     if(opts){
-      const sel=document.createElement('select');sel.className='';
+      const sel=document.createElement('select');
       opts.forEach(o=>{const op=document.createElement('option');op.value=o;op.textContent=o;if(o===ch[key])op.selected=true;sel.appendChild(op);});
-      sel.onchange=()=>{ch[key]=sel.value;saveAll();scheduleAutoSave();title.textContent=ch.name||'Character';};
+      sel.onchange=()=>{
+        ch[key]=sel.value;
+        chars=chars.map(c=>c.id===ch.id?{...c,[key]:sel.value}:c);
+        lsS(CK,chars);scheduleAutoSave();
+      };
       wrap.appendChild(sel);
     } else if(multiline){
       const ta=document.createElement('textarea');ta.value=ch[key]||'';ta.placeholder=ph||'';ta.rows=3;
-      ta.oninput=()=>{ch[key]=ta.value;saveAll();scheduleAutoSave();};wrap.appendChild(ta);
+      ta.oninput=()=>{
+        ch[key]=ta.value;
+        chars=chars.map(c=>c.id===ch.id?{...c,[key]:ta.value}:c);
+        lsS(CK,chars);scheduleAutoSave();
+      };
+      wrap.appendChild(ta);
     } else {
       const inp=document.createElement('input');inp.type='text';inp.value=ch[key]||'';inp.placeholder=ph||'';
-      inp.oninput=()=>{ch[key]=inp.value;saveAll();scheduleAutoSave();title.textContent=ch.name||'Character';};wrap.appendChild(inp);
+      inp.oninput=()=>{
+        ch[key]=inp.value;
+        chars=chars.map(c=>c.id===ch.id?{...c,[key]:inp.value}:c);
+        lsS(CK,chars);scheduleAutoSave();
+        if(key==='name')title.textContent=inp.value||'Character';
+      };
+      wrap.appendChild(inp);
     }
     scroll.appendChild(wrap);
   }
@@ -1867,13 +1882,29 @@ function renderMobWorldEdit(mw,item){
     if(opts){
       const sel=document.createElement('select');
       opts.forEach(o=>{const op=document.createElement('option');op.value=o;op.textContent=o;if(o===item[key])op.selected=true;sel.appendChild(op);});
-      sel.onchange=()=>{item[key]=sel.value;saveAll();scheduleAutoSave();};wrap.appendChild(sel);
+      sel.onchange=()=>{
+        item[key]=sel.value;
+        world=world.map(w=>w.id===item.id?{...w,[key]:sel.value}:w);
+        lsS(WLK,world);scheduleAutoSave();
+      };
+      wrap.appendChild(sel);
     } else if(multiline){
       const ta=document.createElement('textarea');ta.value=item[key]||'';ta.placeholder=ph||'';ta.rows=3;
-      ta.oninput=()=>{item[key]=ta.value;saveAll();scheduleAutoSave();};wrap.appendChild(ta);
+      ta.oninput=()=>{
+        item[key]=ta.value;
+        world=world.map(w=>w.id===item.id?{...w,[key]:ta.value}:w);
+        lsS(WLK,world);scheduleAutoSave();
+      };
+      wrap.appendChild(ta);
     } else {
       const inp=document.createElement('input');inp.type='text';inp.value=item[key]||'';inp.placeholder=ph||'';
-      inp.oninput=()=>{item[key]=inp.value;saveAll();scheduleAutoSave();title.textContent=item.name||'Element';};wrap.appendChild(inp);
+      inp.oninput=()=>{
+        item[key]=inp.value;
+        world=world.map(w=>w.id===item.id?{...w,[key]:inp.value}:w);
+        lsS(WLK,world);scheduleAutoSave();
+        if(key==='name')title.textContent=inp.value||'Element';
+      };
+      wrap.appendChild(inp);
     }
     scroll.appendChild(wrap);
   }
@@ -1897,7 +1928,11 @@ if(window.visualViewport){
     document.getElementById('mobile-tabbar').style.display=kb?'none':'flex';
   });
 }
-window.addEventListener('resize',()=>renderMobile());
+window.addEventListener('resize',()=>{
+  // Don't re-render if user is typing — keyboard resize would destroy focused input
+  if(document.activeElement&&['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName))return;
+  renderMobile();
+});
 
 // ══════════════════════════════════════════════
 // SYNOPSIS
