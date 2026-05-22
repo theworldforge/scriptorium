@@ -1486,38 +1486,45 @@ function renderMobWrite(){
     return;
   }
   const sc=findNode(stories,selSceneId);if(!sc)return;
-  const existing=mw.querySelector('#mob-scene-ta');
-  if(existing&&existing.dataset.sid===sc.id)return; // already rendered for this scene
+  const existingTa=mw.querySelector('#mob-scene-ta');
+  if(existingTa&&existingTa.dataset.sid===sc.id){
+    // Same scene — just refresh title display, keep textarea untouched
+    const wcEl=document.getElementById('mob-wc');
+    if(wcEl)wcEl.textContent=(sc.wordCount||0)+'w';
+    return;
+  }
+  // New scene — full rebuild
   mw.innerHTML='';
-  // Title bar with scene info button
   const titleBar=el('div');titleBar.id='mob-scene-title-bar';
   titleBar.style.cssText='padding:8px 12px;border-bottom:1px solid var(--border-light);background:var(--canvas);flex-shrink:0;display:flex;align-items:center;gap:8px;';
   const ti=el('input');ti.type='text';ti.value=sc.title;
   ti.style.cssText='background:transparent;border:none;outline:none;color:var(--text);font-family:var(--font-body);font-size:16px;font-weight:600;flex:1;min-width:0;';
-  ti.oninput=()=>{stories=updateNode(stories,sc.id,()=>({title:ti.value}));saveAll();scheduleAutoSave();};
-  const wc=el('span');wc.id='mob-wc';wc.style.cssText='font-size:11px;color:var(--text-faint);white-space:nowrap;';
-  wc.textContent=(sc.wordCount||0)+'w';
+  ti.oninput=()=>{stories=updateNode(stories,sc.id,()=>({title:ti.value}));lsS(SK,stories);scheduleAutoSave();};
+  const wcSpan=el('span');wcSpan.id='mob-wc';wcSpan.style.cssText='font-size:11px;color:var(--text-faint);white-space:nowrap;';
+  wcSpan.textContent=(sc.wordCount||0)+'w';
   const infoBtn=el('button');infoBtn.id='mob-info-btn';infoBtn.textContent='Scene ⓘ';
-  infoBtn.onclick=()=>openMobSceneInfo(sc);
-  titleBar.append(ti,wc,infoBtn);
+  // Always fetch fresh scene when opening info panel
+  infoBtn.onclick=()=>{const fresh=findNode(stories,selSceneId);if(fresh)openMobSceneInfo(fresh);};
+  titleBar.append(ti,wcSpan,infoBtn);
   const ta=el('textarea');ta.id='mob-scene-ta';ta.dataset.sid=sc.id;
-  ta.value=typeof sc.content==='string'&&sc.content.startsWith('<')?
-    sc.content.replace(/<[^>]+>/g,'') : sc.content||''; // strip HTML tags if content was from desktop
+  const raw=sc.content||'';
+  ta.value=raw.includes('<')?raw.replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>'):raw;
   ta.placeholder='Begin writing…';
   ta.style.cssText='flex:1;padding:14px 16px;background:var(--canvas);border:none;outline:none;resize:none;color:var(--text);font-family:var(--font-body);font-size:17px;line-height:1.85;';
   ta.oninput=()=>{
     const wc2=cw(ta.value);
     stories=updateNode(stories,sc.id,()=>({content:ta.value,wordCount:wc2}));
     document.getElementById('mob-wc').textContent=wc2+'w';
-    updateWC();saveAll();scheduleAutoSave();
+    updateWC();lsS(SK,stories);scheduleAutoSave();
   };
   mw.append(titleBar,ta);
 }
 
 function openMobSceneInfo(sc){
-  document.getElementById('mob-scene-info').dataset.scid=sc.id;
-  document.getElementById('mob-scene-info-title').textContent=sc.title;
-  renderMobSceneInfoContent(sc.id);
+  // sc may be stale — always re-fetch by ID
+  const fresh=findNode(stories,sc.id)||sc;
+  document.getElementById('mob-scene-info-title').textContent=fresh.title;
+  renderMobSceneInfoContent(fresh.id);
   document.getElementById('mob-scene-info').classList.add('open');
 }
 document.getElementById('mob-scene-info-close').onclick=()=>{
@@ -1543,7 +1550,16 @@ function renderMobSceneInfoContent(scId){
     const btn=el('button');
     btn.style.cssText='width:100%;background:var(--accent);color:var(--accent-text);border:none;border-radius:8px;padding:12px;font-family:var(--font-body);font-size:15px;font-weight:700;cursor:pointer;margin-bottom:16px;';
     btn.textContent='💾 Save';
-    btn.onclick=()=>{saveAll();toast('Saved ✓');if(closeAfter)document.getElementById('mob-scene-info').classList.remove('open');};
+    btn.onclick=()=>{
+      saveAll();
+      toast('Saved ✓');
+      if(closeAfter){
+        document.getElementById('mob-scene-info').classList.remove('open');
+      } else {
+        // Refresh from saved data to confirm it stuck
+        renderMobSceneInfoContent(scId);
+      }
+    };
     return btn;
   }
   scroll.appendChild(makeSaveBtn(false));
