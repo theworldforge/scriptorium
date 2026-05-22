@@ -74,7 +74,8 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);height:
 .tree-node.scene-active .node-label{color:var(--accent);font-weight:700;}
 .tree-node .node-wc{font-size:10px;opacity:.5;white-space:nowrap;}
 .tree-node .node-actions{display:none;gap:1px;flex-shrink:0;}
-.tree-node:hover .node-actions{display:flex;}
+.tree-node:hover .node-actions,.tree-node:focus-within .node-actions{display:flex;}
+@media(hover:none){.tree-node .node-actions{display:flex;}} /* always show on touch devices */
 .node-act-btn{background:none;border:none;cursor:pointer;color:inherit;font-size:11px;padding:1px 3px;border-radius:3px;opacity:.6;line-height:1;}
 .node-act-btn:hover{opacity:1;}
 .node-act-btn.del{color:#c44!important;}
@@ -883,10 +884,10 @@ function renderTree(){
     const storyLbl=el('span','tree-story-label');
     storyLbl.style.cssText='flex:1;padding:0;font-size:11px;font-weight:700;color:var(--text-faint);text-transform:uppercase;letter-spacing:.1em;cursor:pointer;';
     storyLbl.textContent=story.title;
-    storyLbl.ondblclick=()=>startRenameStory(storyLbl,story);
-    const storyActs=el('span');storyActs.style.cssText='display:none;gap:2px;';
-    storyRow.onmouseenter=()=>storyActs.style.display='flex';
-    storyRow.onmouseleave=()=>storyActs.style.display='none';
+    storyLbl.title='Click ✎ to rename';
+    const storyActs=el('span');storyActs.style.cssText='display:flex;gap:2px;flex-shrink:0;';
+    storyRow.onmouseenter=()=>{};
+    storyRow.onmouseleave=()=>{};
     const storyRen=el('button','node-act-btn');storyRen.textContent='✎';storyRen.title='Rename story';
     storyRen.onclick=e=>{e.stopPropagation();startRenameStory(storyLbl,story);};
     const storyAdd=el('button','node-act-btn');storyAdd.textContent='+';storyAdd.title='Add book';
@@ -1518,8 +1519,16 @@ function openMobSceneInfo(sc){
   renderMobSceneInfoContent(sc);
   document.getElementById('mob-scene-info').classList.add('open');
 }
-document.getElementById('mob-scene-info-close').onclick=()=>document.getElementById('mob-scene-info').classList.remove('open');
-document.getElementById('mob-scene-info').onclick=e=>{if(e.target===document.getElementById('mob-scene-info'))document.getElementById('mob-scene-info').classList.remove('open');};
+document.getElementById('mob-scene-info-close').onclick=()=>{
+  saveAll(); // ensure everything is persisted before closing
+  document.getElementById('mob-scene-info').classList.remove('open');
+};
+document.getElementById('mob-scene-info').onclick=e=>{
+  if(e.target===document.getElementById('mob-scene-info')){
+    saveAll();
+    document.getElementById('mob-scene-info').classList.remove('open');
+  }
+};
 
 function renderMobSceneInfoContent(sc){
   const scroll=document.getElementById('mob-scene-info-scroll');
@@ -1530,7 +1539,10 @@ function renderMobSceneInfoContent(sc){
   const noteLbl=el('span','mob-info-label');noteLbl.textContent='Scene Notes & Summary';
   const noteTa=el('textarea','mob-info-ta');noteTa.rows=4;noteTa.value=sc.sceneNotes||'';
   noteTa.placeholder='What happens in this scene? Key beats, purpose, outcome…';
-  noteTa.oninput=()=>{stories=updateNode(stories,sc.id,()=>({sceneNotes:noteTa.value}));saveAll();scheduleAutoSave();};
+  noteTa.oninput=()=>{
+    stories=updateNode(stories,sc.id,()=>({sceneNotes:noteTa.value}));
+    lsS(SK,stories); // immediate localStorage write, no debounce
+  };
   noteSec.append(noteLbl,noteTa);scroll.appendChild(noteSec);
 
   // In-story date
@@ -1538,11 +1550,11 @@ function renderMobSceneInfoContent(sc){
   const dateLbl=el('span','mob-info-label');dateLbl.textContent='In-Story Date';
   const dateInp=el('input','mob-info-inp');dateInp.type='text';dateInp.value=sc.storyDate||'';
   dateInp.placeholder='e.g. Kal. Mar. AD 112 or Day 3';
-  dateInp.oninput=()=>{stories=updateNode(stories,sc.id,()=>({storyDate:dateInp.value}));saveAll();scheduleAutoSave();};
+  dateInp.oninput=()=>{stories=updateNode(stories,sc.id,()=>({storyDate:dateInp.value}));lsS(SK,stories);};
   const orderLbl=el('span','mob-info-label');orderLbl.style.marginTop='8px';orderLbl.textContent='Timeline Sort Order';
   const orderInp=el('input','mob-info-inp');orderInp.type='number';orderInp.value=sc.storyOrder!=null?sc.storyOrder:'';
   orderInp.placeholder='1, 2, 3…';
-  orderInp.oninput=()=>{stories=updateNode(stories,sc.id,()=>({storyOrder:orderInp.value!==''?+orderInp.value:null}));saveAll();scheduleAutoSave();};
+  orderInp.oninput=()=>{stories=updateNode(stories,sc.id,()=>({storyOrder:orderInp.value!==''?+orderInp.value:null}));lsS(SK,stories);};
   dateSec.append(dateLbl,dateInp,orderLbl,orderInp);scroll.appendChild(dateSec);
 
   // Characters in scene
@@ -1624,20 +1636,63 @@ function showMobPicker(items,onPick){
 }
 function renderMobScenes(){
   const ms=document.getElementById('mob-scenes');ms.innerHTML='';
+  // Header with manage hint
+  const hdr=el('div','mob-list-header');
+  const lbl=el('span');lbl.textContent='Scenes';
+  const hint=el('span');hint.style.cssText='font-size:11px;color:var(--text-faint);font-style:italic;';hint.textContent='Hold to rename';
+  hdr.append(lbl,hint);ms.appendChild(hdr);
+  const scroll=el('div','mob-list-scroll');
   for(const s of stories){
-    const sl=el('div','mob-section-label');sl.textContent=s.title;ms.appendChild(sl);
+    // Story row — tappable to rename
+    const storyRow=el('div');
+    storyRow.style.cssText='padding:8px 14px 2px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border-light);background:var(--surface);';
+    const storyLbl=el('span');storyLbl.style.cssText='flex:1;font-size:11px;font-weight:700;color:var(--text-faint);text-transform:uppercase;letter-spacing:.1em;';storyLbl.textContent=s.title;
+    const renBtn=el('button','mob-add-btn');renBtn.style.cssText='font-size:11px;padding:3px 8px;background:transparent;color:var(--text-muted);border:1px solid var(--border);';renBtn.textContent='✎ Rename';
+    renBtn.onclick=()=>{const t=prompt('Rename story:',s.title);if(t&&t.trim()){s.title=t.trim();saveAll();renderMobScenes();}};
+    storyRow.append(storyLbl,renBtn);scroll.appendChild(storyRow);
     for(const book of(s.children||[])){
-      const bl=el('div','mob-section-label');bl.style.fontSize='12px';bl.textContent='📖 '+book.title;ms.appendChild(bl);
+      // Book row
+      const bookRow=el('div');
+      bookRow.style.cssText='padding:7px 14px 3px;display:flex;align-items:center;gap:8px;';
+      const bookLbl=el('span');bookLbl.style.cssText='flex:1;font-size:13px;font-weight:600;color:var(--text-muted);';bookLbl.textContent='📖 '+book.title;
+      const renBook=el('button');renBook.style.cssText='background:none;border:none;color:var(--text-faint);font-size:13px;cursor:pointer;padding:2px 4px;';renBook.textContent='✎';
+      renBook.onclick=()=>{const t=prompt('Rename book:',book.title);if(t&&t.trim()){book.title=t.trim();saveAll();renderMobScenes();}};
+      bookRow.append(bookLbl,renBook);scroll.appendChild(bookRow);
       for(const ch of(book.children||[])){
-        const cl=el('div','mob-chapter-label');cl.textContent='§ '+ch.title;ms.appendChild(cl);
+        // Chapter row
+        const chRow=el('div');
+        chRow.style.cssText='padding:4px 20px 2px;display:flex;align-items:center;gap:6px;';
+        const chLbl=el('span');chLbl.style.cssText='flex:1;font-size:12px;color:var(--text-faint);';chLbl.textContent='§ '+ch.title;
+        const renCh=el('button');renCh.style.cssText='background:none;border:none;color:var(--text-faint);font-size:12px;cursor:pointer;padding:2px 4px;';renCh.textContent='✎';
+        renCh.onclick=()=>{const t=prompt('Rename chapter:',ch.title);if(t&&t.trim()){ch.title=t.trim();saveAll();renderMobScenes();}};
+        chRow.append(chLbl,renCh);scroll.appendChild(chRow);
         for(const sc of(ch.children||[])){
           const row=el('div','mob-scene-row'+(selSceneId===sc.id?' active':''));
-          row.innerHTML='<span>✦ '+sc.title+'</span><span style="font-size:12px;opacity:.6">'+(sc.wordCount||0)+'w</span>';
-          row.onclick=()=>{selSceneId=sc.id;document.getElementById('mob-write').innerHTML='';mobTab='write';setMobTab('write');};ms.appendChild(row);
+          const titleSpan=el('span');titleSpan.textContent='✦ '+sc.title;
+          const right=el('div');right.style.cssText='display:flex;align-items:center;gap:6px;';
+          const wcSpan=el('span');wcSpan.style.cssText='font-size:11px;opacity:.6;';wcSpan.textContent=(sc.wordCount||0)+'w';
+          const renSc=el('button');renSc.style.cssText='background:none;border:none;color:inherit;font-size:13px;cursor:pointer;padding:2px 4px;opacity:.6;';renSc.textContent='✎';
+          renSc.onclick=e=>{e.stopPropagation();const t=prompt('Rename scene:',sc.title);if(t&&t.trim()){stories=updateNode(stories,sc.id,()=>({title:t.trim()}));saveAll();renderMobScenes();}};
+          right.append(wcSpan,renSc);row.append(titleSpan,right);
+          row.onclick=()=>{selSceneId=sc.id;document.getElementById('mob-write').innerHTML='';mobTab='write';setMobTab('write');};
+          scroll.appendChild(row);
         }
+        // Add scene button under chapter
+        const addScBtn=el('button');
+        addScBtn.style.cssText='margin:3px 20px 4px 28px;display:block;background:transparent;border:1px dashed var(--border);border-radius:6px;padding:5px 10px;font-family:var(--font-body);font-size:12px;color:var(--text-faint);cursor:pointer;width:calc(100% - 48px);text-align:left;';
+        addScBtn.textContent='+ Add scene';
+        addScBtn.onclick=()=>{const n={id:uid(),title:'New Scene',content:'',wordCount:0};ch.children=(ch.children||[]).concat(n);saveAll();selSceneId=n.id;mobTab='write';document.getElementById('mob-write').innerHTML='';setMobTab('write');};
+        scroll.appendChild(addScBtn);
       }
+      // Add chapter button under book
+      const addChBtn=el('button');
+      addChBtn.style.cssText='margin:3px 14px 6px;display:block;background:transparent;border:1px dashed var(--border);border-radius:6px;padding:5px 10px;font-family:var(--font-body);font-size:12px;color:var(--text-faint);cursor:pointer;width:calc(100% - 28px);text-align:left;';
+      addChBtn.textContent='+ Add chapter';
+      addChBtn.onclick=()=>{const n={id:uid(),title:'New Chapter',children:[]};book.children=(book.children||[]).concat(n);saveAll();renderMobScenes();};
+      scroll.appendChild(addChBtn);
     }
   }
+  ms.appendChild(scroll);
 }
 function renderMobNotes(){
   const mn=document.getElementById('mob-notes');mn.innerHTML='';
@@ -2234,7 +2289,8 @@ function renderScenePanel(){
 document.getElementById('scene-notes-ta').addEventListener('input',function(){
   if(!selSceneId)return;
   stories=updateNode(stories,selSceneId,()=>({sceneNotes:this.value}));
-  saveAll();scheduleAutoSave();
+  lsS(SK,stories); // immediate write
+  scheduleAutoSave(); // also queue Drive sync
 });
 document.getElementById('btn-add-scene-char').addEventListener('click',()=>{
   if(!selSceneId){toast('Select a scene first');return;}
