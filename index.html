@@ -867,44 +867,16 @@ const SK='scrf_stories', CK='scrf_chars', PLK='scrf_plotlines', COLK='scrf_cols'
 // ══════════════════════════════════════════════
 // DEFAULT DATA
 // ══════════════════════════════════════════════
-const DEF_STORIES=[{id:'s1',title:'Roman Britain Series',children:[{id:'b1',title:'Book One',children:[
-  {id:'c1',title:'Chapter I – Arrival at Abona',children:[
-    {id:'sc1',title:'Scene 1 – The Harbour',content:'',wordCount:0},
-    {id:'sc2',title:'Scene 2 – The Caupona',content:'',wordCount:0},
-  ]},
-  {id:'c2',title:'Chapter II – The Missing Portitor',children:[
-    {id:'sc3',title:'Scene 1 – Sextus Naevius Glaucus',content:'',wordCount:0},
+const DEF_STORIES=[{id:'s1',title:'My Novel',children:[{id:'b1',title:'Book One',children:[
+  {id:'c1',title:'Chapter I',children:[
+    {id:'sc1',title:'Scene 1',content:'',wordCount:0},
   ]},
 ]}]}];
-const DEF_CHARS=[
-  {id:'ch1',name:'Titus',role:'Protagonist',summary:'Last druid of Britannia. Telluric earth magic. Celtic knotwork tattoos. Vulnerable to enchanted iron.',traits:'Stoic, perceptive, burdened',notes:'',image:null},
-  {id:'ch2',name:'Hildr',role:'Protagonist',summary:'Germanic shapeshifter, former gladiator. Chimeric mutations. Tall, blonde. Loyal beneath a crass exterior.',traits:'Fierce, sardonic, fiercely loyal',notes:'',image:null},
-  {id:'ch3',name:'Lucius Cassianus Maro',role:'Antagonist',summary:'Augur smuggling occult goods. Has raised a Draugr from a murdered Optio.',traits:'Charming, meticulous, ruthless',notes:'',image:null},
-  {id:'ch4',name:'Marcus Adnamatus',role:'Supporting',summary:'Magister of the local collegium. Visibly frightened.',traits:'Nervous, well-connected',notes:'',image:null},
-  {id:'ch5',name:'Sextus Naevius Glaucus',role:'Supporting',summary:'Portitor (customs official). Missing, presumed killed.',traits:'Diligent, unlucky',notes:'',image:null},
-];
-const DEF_COLS=[{id:'col1',title:'Act I – Arrival',isSubplot:false},{id:'col2',title:'Act II – Entanglement',isSubplot:false},{id:'col3',title:'Act III – Reckoning',isSubplot:false},{id:'col4',title:'Act IV – Revelation',isSubplot:false}];
-const DEF_CARDS=[
-  {id:'p1',colId:'col1',title:'Arrival at Abona',body:'Titus and Hildr arrive by boat. First glimpse of the port.',color:'#e8f4e8',order:0},
-  {id:'p2',colId:'col1',title:'Meeting the Beneficiarius',body:'He is dismissive — boatmen drown, it happens.',color:'#e8f0ff',order:1},
-  {id:'p3',colId:'col1',title:'Glaucus is missing',body:'Portitor Sextus Naevius Glaucus — three days gone.',color:'#fff3e0',order:2},
-  {id:'p4',colId:'col2',title:'Maro surfaces',body:'Appears as a respectable trader.',color:'#fce8e8',order:0},
-  {id:'p5',colId:'col3',title:'The smuggling route exposed',body:'Titus traces the enchanted goods.',color:'#e8fff3',order:0},
-  {id:'p6',colId:'col4',title:'Closing revelation',body:'Maro is an agent, not the principal.',color:'#fff8e0',order:0},
-];
-const DEF_NOTES=[
-  {id:'n1',title:'Setting: Abona',content:'Modern Sea Mills, Bristol. AD 112. Port on the Avon estuary. Tungrian auxiliaries stationed nearby.'},
-  {id:'n2',title:'Research: Roman dress',content:''},
-];
-const DEF_WORLD=[
-  {id:'w1',name:'Abona',type:'Location',icon:'🏛',description:'Roman port at the mouth of the Avon estuary. Modern Sea Mills, Bristol. AD 112.',notes:'Tungrian auxiliaries stationed nearby.',sceneIds:[]},
-  {id:'w2',name:'The Caupona',type:'Location',icon:'🍷',description:'A dockside inn — low-ceilinged, smelling of fish sauce and cheap wine.',notes:'',sceneIds:[]},
-  {id:'w3',name:'The Harbour',type:'Location',icon:'⚓',description:'The mud-banked estuary harbour where goods are offloaded.',notes:'',sceneIds:[]},
-  {id:'w4',name:'The Draugr',type:'Creature',icon:'💀',description:'A revenant raised from a murdered Optio by Lucius Cassianus Maro through occult means.',notes:'Bound by enchanted iron. Vulnerable to running water.',sceneIds:[]},
-  {id:'w5',name:'Enchanted Iron',type:'Object',icon:'⚒',description:'Iron worked with druidic counter-charms. Anathema to Titus — causes pain and disrupts his connection to telluric magic.',notes:'Source unknown. Maro has a supply.',sceneIds:[]},
-  {id:'w6',name:'The Signet Ring',type:'Object',icon:'💍',description:'A Roman signet ring found near the scene of Glaucus\'s disappearance.',notes:'May identify the killer or a witness.',sceneIds:[]},
-  {id:'w7',name:'Telluric Magic',type:'Concept',icon:'🌀',description:'Earth-rooted druidic power drawn from ley lines and the living land. Titus\'s primary ability.',notes:'Weakened in urban environments. Severed by enchanted iron.',sceneIds:[]},
-];
+const DEF_CHARS=[];
+const DEF_COLS=[{id:'col1',title:'Act I',isSubplot:false},{id:'col2',title:'Act II',isSubplot:false},{id:'col3',title:'Act III',isSubplot:false},{id:'col4',title:'Act IV',isSubplot:false}];
+const DEF_CARDS=[];
+const DEF_NOTES=[];
+const DEF_WORLD=[];
 const DEF_SYN={premise:'',books:{}};
 const CARD_COLORS={
   parchment:['#e8f4e8','#e8f0ff','#fff3e0','#fce8e8','#f3e8ff','#e8fff3','#fff8e0','#ffeaea'],
@@ -1223,6 +1195,20 @@ document.addEventListener('DOMContentLoaded',()=>{
       const sel=window.getSelection();
       const anchorNode=sel&&sel.anchorNode;
       const anchorOffset=sel&&sel.anchorOffset;
+      // DEBUG — show what chars are in the text
+      let allChars='';
+      function debugNode(node){
+        if(node.nodeType===3){
+          for(let i=0;i<node.textContent.length;i++){
+            const c=node.textContent[i];
+            if(c==="'"||c==='"'||c==='\u2018'||c==='\u2019'||c==='\u201c'||c==='\u201d'){
+              allChars+=c+'('+node.textContent.charCodeAt(i)+') ';
+            }
+          }
+        } else { node.childNodes.forEach(debugNode); }
+      }
+      debugNode(ed2);
+      if(allChars) document.title='Quotes: '+allChars;
       function sweepNode(node){
         if(node.nodeType===3){
           const orig=node.textContent;
@@ -2292,6 +2278,27 @@ function renderMobMore(){
   makeSection('Backup');
   makeBtn('Export JSON','📤',()=>document.getElementById('local-export-btn').click());
   makeBtn('Import JSON','📥',()=>document.getElementById('local-import-btn').click());
+
+  // Settings
+  makeSection('Settings');
+  const sqBtn=document.createElement('button');
+  sqBtn.style.cssText='width:100%;text-align:left;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;font-family:var(--font-body);font-size:15px;color:var(--text);cursor:pointer;display:flex;align-items:center;justify-content:space-between;';
+  const sqLabel=document.createElement('span');
+  sqLabel.textContent='\u2018\u2019 Smart Quotes';
+  const sqToggle=document.createElement('span');
+  sqToggle.style.cssText='width:44px;height:24px;border-radius:12px;display:inline-flex;align-items:center;padding:2px;transition:background .2s;background:'+(smartQuotes?'var(--accent)':'var(--border)')+';';
+  const sqThumb=document.createElement('span');
+  sqThumb.style.cssText='width:20px;height:20px;border-radius:50%;background:#fff;transition:transform .2s;transform:'+(smartQuotes?'translateX(20px)':'translateX(0)')+';display:block;';
+  sqToggle.appendChild(sqThumb);
+  sqBtn.appendChild(sqLabel);sqBtn.appendChild(sqToggle);
+  sqBtn.onclick=()=>{
+    smartQuotes=!smartQuotes;
+    sqToggle.style.background=smartQuotes?'var(--accent)':'var(--border)';
+    sqThumb.style.transform=smartQuotes?'translateX(20px)':'translateX(0)';
+    document.getElementById('fmt-smartquotes').classList.toggle('active',smartQuotes);
+    toast('Smart quotes '+(smartQuotes?'on':'off'));
+  };
+  scroll.appendChild(sqBtn);
 
   mm.appendChild(scroll);
 }
