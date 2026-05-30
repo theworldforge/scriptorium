@@ -534,7 +534,7 @@ body.theme-light{--bg:#f7f8fa;--surface:#eef0f4;--surface-hover:rgba(37,99,235,0
             <span id="scene-wc"></span>
           </div>
           <div id="writing-wrap" style="display:none">
-            <div id="scene-editor" contenteditable="true" data-placeholder="Begin writing… type @name to link a character or element" spellcheck="true"></div>
+            <div id="scene-editor" contenteditable="true" data-placeholder="Begin writing… type @name to link a character or element" spellcheck="true" autocorrect="off" autocomplete="off" autocapitalize="sentences"></div>
             <div id="mention-drop"></div>
           </div>
         </div>
@@ -1215,32 +1215,38 @@ document.addEventListener('DOMContentLoaded',()=>{
     saveEditorContent();
     updateFmtBar();
 
-    // Mobile-compatible smart quotes — catch AFTER the character is inserted
-    // Works on Android file:// and served pages alike — no inputType dependency
-    if(smartQuotes){
+    // Smart quotes sweep — runs always, converts after typing pauses
+    clearTimeout(window._sqTimer);
+    window._sqTimer=setTimeout(()=>{
+      const ed2=document.getElementById('scene-editor');
+      if(!ed2)return;
       const sel=window.getSelection();
-      if(sel&&sel.rangeCount){
-        const range=sel.getRangeAt(0);
-        const node=range.startContainer;
+      const anchorNode=sel&&sel.anchorNode;
+      const anchorOffset=sel&&sel.anchorOffset;
+      function sweepNode(node){
         if(node.nodeType===3){
-          const offset=range.startOffset;
-          const t=node.textContent;
-          const justTyped=t[offset-1];
-          if(justTyped==="'"||justTyped==='"'){
-            const before=t.slice(0,offset-1);
-            const replacement=applySmartQuotes(justTyped,before);
-            if(replacement!==justTyped){
-              node.textContent=before+replacement+t.slice(offset);
-              const newRange=document.createRange();
-              newRange.setStart(node,offset);
-              newRange.collapse(true);
-              sel.removeAllRanges();sel.addRange(newRange);
-              saveEditorContent();
-            }
-          }
+          const orig=node.textContent;
+          let t=orig;
+          t=t.replace(/(^|[\s\u2014\u2013(\[{>])'/g,(m,p1)=>p1+'\u2018');
+          t=t.replace(/'/g,'\u2019');
+          t=t.replace(/(^|[\s\u2014\u2013(\[{>])"/g,(m,p1)=>p1+'\u201c');
+          t=t.replace(/"/g,'\u201d');
+          if(t!==orig)node.textContent=t;
+        } else {
+          node.childNodes.forEach(sweepNode);
         }
       }
-    }
+      sweepNode(ed2);
+      if(anchorNode&&sel){
+        try{
+          const r=document.createRange();
+          r.setStart(anchorNode,Math.min(anchorOffset,anchorNode.textContent?anchorNode.textContent.length:0));
+          r.collapse(true);
+          sel.removeAllRanges();sel.addRange(r);
+        }catch(e){}
+      }
+      saveEditorContent();
+    },600);
 
     // @mention detection
     const sel=window.getSelection();
@@ -1257,16 +1263,18 @@ document.addEventListener('DOMContentLoaded',()=>{
     }
     if(mentionState)renderMentionDrop(getMentionFiltered(mentionState.q));
   });
-  ed.addEventListener('keydown',function(e){
-    // Smart quotes via keydown (desktop fallback — mobile uses input event above)
-    if(smartQuotes&&(e.key==='"'||e.key==="'")&&e.key!=='Unidentified'){
+  // beforeinput — fires reliably on Android Chrome before the character lands
+  ed.addEventListener('beforeinput',function(e){
+    if(!smartQuotes)return;
+    if(e.data==="'"||e.data==='"'){
       e.preventDefault();
       const sel=window.getSelection();
       const before=sel.rangeCount?sel.getRangeAt(0).startContainer.textContent.slice(0,sel.getRangeAt(0).startOffset):'';
-      document.execCommand('insertText',false,applySmartQuotes(e.key,before));
-      return;
+      document.execCommand('insertText',false,applySmartQuotes(e.data,before));
     }
-    // Smart dashes and ellipsis handled on input
+  });
+  ed.addEventListener('keydown',function(e){
+    // Mention navigation
     if(!mentionState)return;
     const filtered=getMentionFiltered(mentionState.q);
     if(!filtered.length)return;
