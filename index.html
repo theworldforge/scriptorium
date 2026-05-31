@@ -3384,8 +3384,8 @@ Correct punctuation, add paragraph breaks where natural pauses suggest them, and
 
     recognition.onend=()=>{
       if(isRecording){
-        // Auto-restarted if still supposed to be recording (Chrome stops after ~60s)
-        recognition.start();
+        // Android stops recognition quickly on silence — restart immediately
+        try{recognition.start();}catch(e){}
       }
     };
 
@@ -3397,11 +3397,12 @@ Correct punctuation, add paragraph breaks where natural pauses suggest them, and
     if(recognition){recognition.onend=null;recognition.stop();recognition=null;}
     document.getElementById('dictate-orb').classList.remove('recording');
     document.getElementById('dictate-orb').textContent='🎙';
-    if(fullTranscript.trim()){
+    const transcript=fullTranscript.trim();
+    if(transcript){
       document.getElementById('dictate-status').textContent='';
-      cleanWithClaude(fullTranscript.trim());
+      cleanWithClaude(transcript);
     } else {
-      document.getElementById('dictate-status').textContent='Nothing recorded — tap the mic to try again';
+      document.getElementById('dictate-status').textContent='Nothing recorded — tap the mic, wait a moment, then speak';
     }
   }
 
