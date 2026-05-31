@@ -105,7 +105,8 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);height:
 #scene-wc{font-size:11px;color:var(--text-faint);white-space:nowrap;}
 /* contenteditable writing area */
 #writing-wrap{position:relative;flex:1;}
-#scene-editor{font-family:var(--font-body);font-size:13px;line-height:2;color:var(--text);outline:none;min-height:400px;width:100%;caret-color:var(--accent);}
+#scene-editor{font-family:var(--font-body);font-size:13px;line-height:2;color:var(--text);outline:none;min-height:400px;width:100%;caret-color:var(--accent);font-feature-settings:'liga' 1,'calt' 1,'clig' 1;quotes:'\2018' '\2019' '\201C' '\201D';}
+#scene-editor q{quotes:'\2018' '\2019' '\201C' '\201D';}
 #scene-editor:empty:before{content:attr(data-placeholder);color:var(--text-faint);font-style:italic;pointer-events:none;}
 #scene-editor .mention-chip{color:var(--mention);background:var(--mention-bg);border-radius:3px;padding:0 2px;font-weight:600;cursor:pointer;}
 #mention-drop{display:none;position:absolute;top:100%;left:0;z-index:300;background:var(--panel);border:1px solid var(--border);border-radius:8px;box-shadow:0 6px 24px var(--shadow);min-width:210px;margin-top:4px;}
@@ -425,6 +426,9 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);height:
 body.theme-dark{--bg:#13111a;--surface:#1c1926;--surface-hover:rgba(160,124,222,0.18);--border:#2e2a3d;--border-light:#252130;--text:#e8e2f5;--text-muted:#7a718a;--text-faint:#5a5268;--accent:#a07cde;--accent-text:#e8e2f5;--canvas:#241f33;--canvas-border:#2e2a3d;--panel:#1c1926;--header:#0e0c14;--header-text:#e8e2f5;--col-header:#2e2a3d;--col-header-text:#c8bbf0;--shadow:rgba(0,0,0,.4);--tag:#a07cde22;--mention:#c8a0ff;--mention-bg:#2a1f3d;--drive-ok:#4caf50;--drive-err:#ef5350;--drive-wait:#7a718a;}
 body.theme-light{--bg:#f7f8fa;--surface:#eef0f4;--surface-hover:rgba(37,99,235,0.1);--border:#d0d4de;--border-light:#e0e4ec;--text:#1a1d26;--text-muted:#6b7280;--text-faint:#9298a8;--accent:#2563eb;--accent-text:#ffffff;--canvas:#ffffff;--canvas-border:#d0d4de;--panel:#eef0f4;--header:#1e293b;--header-text:#f8fafc;--col-header:#e2e8f0;--col-header-text:#334155;--shadow:rgba(0,0,0,.09);--tag:#2563eb18;--mention:#2563eb;--mention-bg:#eff6ff;--drive-ok:#16a34a;--drive-err:#dc2626;--drive-wait:#6b7280;}
 
+/* Mobile floating quote convert button */
+#mob-quote-btn{display:none;position:fixed;bottom:80px;right:16px;z-index:500;background:var(--accent);color:var(--accent-text);border:none;border-radius:24px;padding:10px 16px;font-family:var(--font-body);font-size:15px;box-shadow:0 3px 12px var(--shadow);cursor:pointer;}
+@media(max-width:767px){#mob-quote-btn.visible{display:block;}}
 @media(max-width:767px){
   #left-panel,#right-panels{display:none!important;}
   #mobile-tabbar{display:flex;}
@@ -853,6 +857,7 @@ body.theme-light{--bg:#f7f8fa;--surface:#eef0f4;--surface-hover:rgba(37,99,235,0
 </div>
 
 <div id="toast"></div>
+<button id="mob-quote-btn" title="Convert quotes to curly">' → '</button>
 
 <script>
 // ══════════════════════════════════════════════
@@ -1146,25 +1151,46 @@ function applySmartQuotes(text,before){
 function convertExistingQuotes(){
   const ed=document.getElementById('scene-editor');
   if(!ed){toast('No scene open.');return;}
-  // Walk all text nodes and replace straight quotes with curly equivalents
   function processNode(node){
     if(node.nodeType===3){
       let t=node.textContent;
-      // Replace straight double quotes
-      t=t.replace(/(^|\s)"([^"]*?)"/g,'$1\u201c$2\u201d');
-      // Replace straight single quotes: opening after space/start, closing/apostrophe after letter
-      t=t.replace(/(\s|^)'(?=[^'\s])/g,'$1\u2018');
-      t=t.replace(/([a-zA-Z])'([a-zA-Z])/g,'$1\u2019$2'); // contractions
-      t=t.replace(/([^\s])'/g,'$1\u2019'); // closing
-      t=t.replace(/^'/,'$1\u2018'); // opening at very start
+      // Double quotes
+      t=t.replace(/"([^"]*)"/g,'\u201c$1\u201d');
+      t=t.replace(/"/g,'\u201c'); // any remaining opening
+      // Single quotes — contractions first
+      t=t.replace(/([a-zA-Z])'([a-zA-Z])/g,'$1\u2019$2');
+      // Opening single: after space, start of string, or opening bracket
+      t=t.replace(/(^|[\s(\[{])'(?=\S)/g,'$1\u2018');
+      // Closing single: after non-space
+      t=t.replace(/([^\s])'/g,'$1\u2019');
+      // Any remaining straight single at start = opening
+      t=t.replace(/^'/,'\u2018');
       node.textContent=t;
     } else {
-      node.childNodes.forEach(processNode);
+      // For element nodes, treat each child block as having an implicit start
+      node.childNodes.forEach(child=>{
+        if(child.nodeType===1&&/^(P|DIV|BR|LI)$/.test(child.tagName)){
+          // Mark first text node of block as "start of line" by prepending space context
+          processBlockStart(child);
+        } else {
+          processNode(child);
+        }
+      });
     }
+  }
+  function processBlockStart(block){
+    // Find first text node and treat leading quote as opening
+    const walker=document.createTreeWalker(block,NodeFilter.SHOW_TEXT);
+    const first=walker.nextNode();
+    if(first&&first.textContent.startsWith("'")){
+      first.textContent='\u2018'+first.textContent.slice(1);
+    }
+    // Process rest normally
+    processNode(block);
   }
   processNode(ed);
   saveEditorContent();
-  toast('Quotes converted ✓');
+  toast('Quotes converted \u2713');
 }
 
 function saveEditorContent(){
@@ -1269,6 +1295,12 @@ document.addEventListener('DOMContentLoaded',()=>{
     if(e.key==='Enter'||e.key==='Tab'){e.preventDefault();insertMention(filtered[mentionIdx]);}
     if(e.key==='Escape'){mentionState=null;document.getElementById('mention-drop').classList.remove('open');}
   });
+  // Mobile floating quote convert button
+  const mqb=document.getElementById('mob-quote-btn');
+  mqb.addEventListener('click',()=>{convertExistingQuotes();});
+  ed.addEventListener('focus',()=>{if(window.innerWidth<768)mqb.classList.add('visible');});
+  ed.addEventListener('blur',()=>{setTimeout(()=>mqb.classList.remove('visible'),200);});
+
   ed.addEventListener('keyup',updateFmtBar);
   ed.addEventListener('mouseup',updateFmtBar);
   ed.addEventListener('selectionchange',updateFmtBar);
