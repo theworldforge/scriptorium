@@ -106,6 +106,8 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);height:
 /* contenteditable writing area */
 #writing-wrap{position:relative;flex:1;}
 #scene-editor{font-family:var(--font-body);font-size:13px;line-height:2;color:var(--text);outline:none;min-height:400px;width:100%;caret-color:var(--accent);font-feature-settings:'liga' 1,'calt' 1,'clig' 1;quotes:'\2018' '\2019' '\201C' '\201D';}
+#scene-editor p{text-indent:1.8em;}
+#scene-editor p:first-child{text-indent:0;}
 #scene-editor q{quotes:'\2018' '\2019' '\201C' '\201D';}
 #scene-editor:empty:before{content:attr(data-placeholder);color:var(--text-faint);font-style:italic;pointer-events:none;}
 #scene-editor .mention-chip{color:var(--mention);background:var(--mention-bg);border-radius:3px;padding:0 2px;font-weight:600;cursor:pointer;}
@@ -1788,12 +1790,25 @@ function renderMobWrite(){
   const infoBtn=el('button');infoBtn.id='mob-info-btn';infoBtn.textContent='Scene ⓘ';
   // Always fetch fresh scene when opening info panel
   infoBtn.onclick=()=>{const fresh=findNode(stories,selSceneId);if(fresh)openMobSceneInfo(fresh);};
-  titleBar.append(ti,wcSpan,infoBtn);
+  // Dictate button in mobile toolbar
+  const dictBtn=el('button');
+  dictBtn.textContent='🎙';
+  dictBtn.style.cssText='background:none;border:none;font-size:18px;cursor:pointer;padding:2px 4px;line-height:1;flex-shrink:0;';
+  dictBtn.title='Dictate into this scene';
+  dictBtn.onclick=()=>{
+    // Pre-select scene destination and open modal
+    openDictateModal();
+    setTimeout(()=>{
+      const sel=document.getElementById('dictate-dest-sel');
+      if(sel)sel.value='scene';
+    },50);
+  };
+  titleBar.append(ti,wcSpan,dictBtn,infoBtn);
   const ta=el('textarea');ta.id='mob-scene-ta';ta.dataset.sid=sc.id;
   const raw=sc.content||'';
   ta.value=raw.includes('<')?raw.replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>'):raw;
   ta.placeholder='Begin writing…';
-  ta.style.cssText='flex:1;padding:14px 16px;background:var(--canvas);border:none;outline:none;resize:none;color:var(--text);font-family:var(--font-body);font-size:17px;line-height:1.85;';
+  ta.style.cssText='flex:1;padding:14px 16px;background:var(--canvas);border:none;outline:none;resize:none;color:var(--text);font-family:var(--font-body);font-size:17px;line-height:1.85;tab-size:2;-moz-tab-size:2;';
   ta.oninput=()=>{
     const wc2=cw(ta.value);
     stories=updateNode(stories,sc.id,()=>({content:ta.value,wordCount:wc2}));
@@ -1824,23 +1839,22 @@ function renderMobWrite(){
       updateWC();lsS(SK,stories);scheduleAutoSave();
     }
   });
-  // Wire convert button to this textarea
-  const mqb=document.getElementById('mob-quote-btn');
-  if(mqb)mqb.onclick=()=>{
-    const pos=ta.selectionStart;
-    let t=ta.value;
-    t=t.replace(/([a-zA-Z])'([a-zA-Z])/g,'$1\u2019$2');
-    t=t.replace(/(^|[\s(\[{'""])'(?=\S)/gm,'$1\u2018');
-    t=t.replace(/([^\s])'/g,'$1\u2019');
-    t=t.replace(/^'/mg,'\u2018');
-    t=t.replace(/"([^"]*)"/g,'\u201c$1\u201d');
-    ta.value=t;
-    ta.setSelectionRange(pos,pos);
-    const wc2=cw(ta.value);
-    stories=updateNode(stories,sc.id,()=>({content:ta.value,wordCount:wc2}));
-    lsS(SK,stories);scheduleAutoSave();
-    toast('Quotes converted \u2713');
-  };
+  // Auto-indent new paragraphs on Enter
+  ta.addEventListener('keydown',function(e){
+    if(e.key==='Enter'){
+      e.preventDefault();
+      const pos=this.selectionStart;
+      const val=this.value;
+      const indent='\n\t';
+      this.value=val.slice(0,pos)+indent+val.slice(pos);
+      this.setSelectionRange(pos+indent.length,pos+indent.length);
+      // Save
+      const wc2=cw(this.value);
+      stories=updateNode(stories,sc.id,()=>({content:this.value,wordCount:wc2}));
+      document.getElementById('mob-wc').textContent=wc2+'w';
+      updateWC();lsS(SK,stories);scheduleAutoSave();
+    }
+  });
   mw.append(titleBar,ta);
 }
 
@@ -3372,7 +3386,11 @@ Correct punctuation, add paragraph breaks where natural pauses suggest them, and
     try{
       const resp=await fetch(ANTHROPIC_API,{
         method:'POST',
-        headers:{'Content-Type':'application/json'},
+        headers:{
+          'Content-Type':'application/json',
+          'anthropic-version':'2023-06-01',
+          'anthropic-dangerous-direct-browser-access':'true'
+        },
         body:JSON.stringify({
           model:'claude-sonnet-4-20250514',
           max_tokens:1000,
@@ -3502,7 +3520,11 @@ Correct punctuation, add paragraph breaks where natural pauses suggest them, and
       try{
         const resp=await fetch(ANTHROPIC_API,{
           method:'POST',
-          headers:{'Content-Type':'application/json'},
+          headers:{
+            'Content-Type':'application/json',
+            'anthropic-version':'2023-06-01',
+            'anthropic-dangerous-direct-browser-access':'true'
+          },
           body:JSON.stringify({
             model:'claude-sonnet-4-20250514',
             max_tokens:1000,
