@@ -2423,8 +2423,20 @@ function renderMobMore(){
   makeBtn('Export JSON','📤',()=>document.getElementById('local-export-btn').click());
   makeBtn('Import JSON','📥',()=>document.getElementById('local-import-btn').click());
 
-  // Settings
-  makeSection('Settings');
+  // API Key
+  makeSection('AI Settings');
+  const akBtn=document.createElement('button');
+  akBtn.style.cssText='width:100%;text-align:left;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;font-family:var(--font-body);font-size:15px;color:var(--text);cursor:pointer;display:flex;align-items:center;justify-content:space-between;';
+  const akKey=getApiKey();
+  akBtn.innerHTML='<span>Anthropic API Key</span><span style="font-size:12px;color:var(--text-faint)">'+(akKey?'✓ Set':'Not set')+'</span>';
+  akBtn.onclick=()=>{
+    const k=prompt('Paste your Anthropic API key (starts with sk-ant-):\n\nLeave blank to clear.',(getApiKey()||''));
+    if(k===null)return;
+    if(k.trim()===''){localStorage.removeItem(AK);toast('API key cleared');renderMobMore();return;}
+    if(k.trim().startsWith('sk-')){setApiKey(k);toast('API key saved \u2713');renderMobMore();}
+    else alert('Invalid key — should start with sk-ant-');
+  };
+  scroll.appendChild(akBtn);
   const sqBtn=document.createElement('button');
   sqBtn.style.cssText='width:100%;text-align:left;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;font-family:var(--font-body);font-size:15px;color:var(--text);cursor:pointer;display:flex;align-items:center;justify-content:space-between;';
   const sqLabel=document.createElement('span');
@@ -3266,8 +3278,21 @@ document.getElementById('import-file-input').addEventListener('change',function(
 });
 
 // ══════════════════════════════════════════════
-// DICTATION — speech to text via Web Speech API
+// ANTHROPIC API KEY MANAGEMENT
 // ══════════════════════════════════════════════
+const AK='scrf_ak';
+function getApiKey(){return localStorage.getItem(AK)||'';}
+function setApiKey(k){localStorage.setItem(AK,k.trim());}
+function requireApiKey(){
+  const k=getApiKey();
+  if(k)return k;
+  const k2=prompt('Enter your Anthropic API key to use AI features (dictation cleanup, photo import).\n\nGet one free at console.anthropic.com — it starts with sk-ant-\n\nYour key is stored only on this device:');
+  if(k2&&k2.trim().startsWith('sk-')){setApiKey(k2);return k2.trim();}
+  if(k2)alert('That doesn\'t look like a valid API key (should start with sk-ant-)');
+  return null;
+}
+
+// Add API key entry to More menu settings section (called after renderMobMore builds)
 (function(){
   const ANTHROPIC_API='https://api.anthropic.com/v1/messages';
 
@@ -3381,6 +3406,13 @@ Correct punctuation, add paragraph breaks where natural pauses suggest them, and
   }
 
   async function cleanWithClaude(rawText){
+    const apiKey=requireApiKey();
+    if(!apiKey){
+      document.getElementById('dictate-cleaning').style.display='none';
+      document.getElementById('dictate-result-ta').value=rawText;
+      document.getElementById('dictate-result-box').style.display='';
+      return;
+    }
     document.getElementById('dictate-cleaning').style.display='';
     document.getElementById('dictate-result-box').style.display='none';
     try{
@@ -3389,7 +3421,8 @@ Correct punctuation, add paragraph breaks where natural pauses suggest them, and
         headers:{
           'Content-Type':'application/json',
           'anthropic-version':'2023-06-01',
-          'anthropic-dangerous-direct-browser-access':'true'
+          'anthropic-dangerous-direct-browser-access':'true',
+          'x-api-key':apiKey
         },
         body:JSON.stringify({
           model:'claude-sonnet-4-20250514',
@@ -3518,12 +3551,18 @@ Correct punctuation, add paragraph breaks where natural pauses suggest them, and
       document.getElementById('import-results').style.display='none';
 
       try{
+        const apiKey=requireApiKey();
+        if(!apiKey){
+          document.getElementById('import-status').textContent='API key required for photo import.';
+          return;
+        }
         const resp=await fetch(ANTHROPIC_API,{
           method:'POST',
           headers:{
             'Content-Type':'application/json',
             'anthropic-version':'2023-06-01',
-            'anthropic-dangerous-direct-browser-access':'true'
+            'anthropic-dangerous-direct-browser-access':'true',
+            'x-api-key':apiKey
           },
           body:JSON.stringify({
             model:'claude-sonnet-4-20250514',
