@@ -959,10 +959,6 @@ let driveToken=null, driveFolderId=null, driveFolderName=null, driveFileId=null,
   try{const m=JSON.parse(localStorage.getItem(DRIVE_META_KEY)||'null');
     if(m){driveFolderId=m.folderId;driveFolderName=m.folderName;driveFileId=m.fileId||null;}
   }catch{}
-  // Auto-reconnect on startup if we have a stored folder
-  if(driveFolderId&&CLIENT_ID){
-    window.addEventListener('load',()=>setTimeout(silentReconnect,1500));
-  }
 })();
 function persistMeta(ts){localStorage.setItem(DRIVE_META_KEY,JSON.stringify({folderId:driveFolderId,folderName:driveFolderName,fileId:driveFileId,lastSave:ts}));}
 function getLastSave(){try{const m=JSON.parse(localStorage.getItem(DRIVE_META_KEY)||'null');return m?.lastSave?new Date(m.lastSave).toLocaleString():'never';}catch{return'never';}}
@@ -991,7 +987,7 @@ function setAppData(d){
 function scheduleAutoSave(){
   if(!driveToken||!driveFolderId)return;
   clearTimeout(autoSaveTimer);
-  autoSaveTimer=setTimeout(()=>driveSave(true),8000);
+  autoSaveTimer=setTimeout(()=>driveSave(true),3000);
 }
 
 // ══════════════════════════════════════════════
@@ -3196,12 +3192,9 @@ document.addEventListener('visibilitychange',()=>{
 });
 
 function silentReconnect(){
-  // Only attempt if we have a folder ID stored (user has connected before)
   if(!driveFolderId||!CLIENT_ID)return;
   const expiry=localStorage.getItem(TOKEN_EXPIRY_KEY);
-  // If token still valid, skip
   if(expiry&&Date.now()<parseInt(expiry)-60000)return;
-  // Try silent popup first (desktop), redirect for mobile
   if(!isMobileDevice()&&window.google){
     try{
       const tc=window.google.accounts.oauth2.initTokenClient({
@@ -3218,10 +3211,20 @@ function silentReconnect(){
       tc.requestAccessToken({prompt:''});
     }catch(e){}
   } else if(isMobileDevice()){
-    // Silent redirect — won't prompt if already signed in to Google
     doRedirectAuth(true);
   }
 }
+
+// Auto-connect on page load and periodic save every 2 minutes
+window.addEventListener('load',()=>{
+  if(driveFolderId&&CLIENT_ID){
+    setTimeout(silentReconnect,1500);
+  }
+  // Periodic auto-save every 2 minutes if connected
+  setInterval(()=>{
+    if(driveToken&&driveFolderId)driveSave(true);
+  },120000);
+});
 
 document.getElementById('drive-auth-btn').addEventListener('click',()=>{
   if(!CLIENT_ID){driveLog('No OAuth Client ID configured.');return;}
