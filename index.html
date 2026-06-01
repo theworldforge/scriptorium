@@ -889,6 +889,62 @@ const DRIVE_FILE_NAME='scriptorium-backup.json';
 const DRIVE_META_KEY='scrf-drive-meta';
 const SK='scrf_stories', CK='scrf_chars', PLK='scrf_plotlines', COLK='scrf_cols', CARDK='scrf_cards', NK='scrf_notes', TK='scrf_theme', CWK='scrf_cw', WLK='scrf_world', SYNK='scrf_syn', SPLK='scrf_subplots';
 
+// ── GIS Token Client (persistent, auto-refreshing) ──
+let _tokenClient=null;
+let _tokenCallbackQueue=[];
+
+function getTokenClient(){
+  return new Promise((resolve)=>{
+    function init(){
+      if(!_tokenClient){
+        _tokenClient=window.google.accounts.oauth2.initTokenClient({
+          client_id:CLIENT_ID,
+          scope:SCOPES,
+          callback:(resp)=>{
+            if(resp.access_token){
+              driveToken=resp.access_token;
+              lsS(TOKEN_EXPIRY_KEY,Date.now()+3500000);
+              setDriveStatus('synced','Drive');
+            }
+            _tokenCallbackQueue.forEach(cb=>cb(resp));
+            _tokenCallbackQueue=[];
+          }
+        });
+      }
+      resolve(_tokenClient);
+    }
+    if(window.google&&window.google.accounts){init();}
+    else{
+      const s=document.createElement('script');
+      s.src='https://accounts.google.com/gsi/client';
+      s.onload=init;
+      document.head.appendChild(s);
+    }
+  });
+}
+
+async function ensureToken(interactive){
+  // Token still valid?
+  const expiry=localStorage.getItem(TOKEN_EXPIRY_KEY);
+  if(driveToken&&expiry&&Date.now()<parseInt(expiry)-60000)return true;
+  // Try silent refresh first
+  return new Promise(async(resolve)=>{
+    const tc=await getTokenClient();
+    _tokenCallbackQueue.push((resp)=>{
+      resolve(!!resp.access_token&&!resp.error);
+    });
+    try{
+      tc.requestAccessToken({prompt: interactive?'':'none'});
+    }catch(e){
+      // Silent failed — need interactive
+      if(!interactive){
+        _tokenCallbackQueue.pop();
+        resolve(false);
+      }
+    }
+  });
+}
+
 // ══════════════════════════════════════════════
 // DEFAULT DATA
 // ══════════════════════════════════════════════
@@ -3074,7 +3130,14 @@ function driveLog(msg){
   log.textContent=msg;log.style.display=msg?'block':'none';
 }
 async function driveSave(silent){
-  if(!driveToken){if(!silent)driveLog('Not connected or no folder set.');return;}
+  if(!driveFolderId){if(!silent)driveLog('No folder set.');return;}
+  // Auto-refresh token silently before saving
+  const ok=await ensureToken(false);
+  if(!ok){
+    if(!silent)driveLog('Not connected — click Connect.');
+    setDriveStatus('error','Drive');
+    return;
+  }
   if(!silent)setDriveStatus('syncing','Saving…');
   try{
     const payload=JSON.stringify(getAppData(),null,2);
@@ -3193,26 +3256,14 @@ document.addEventListener('visibilitychange',()=>{
 
 function silentReconnect(){
   if(!driveFolderId||!CLIENT_ID)return;
-  const expiry=localStorage.getItem(TOKEN_EXPIRY_KEY);
-  if(expiry&&Date.now()<parseInt(expiry)-60000)return;
-  if(!isMobileDevice()&&window.google){
-    try{
-      const tc=window.google.accounts.oauth2.initTokenClient({
-        client_id:CLIENT_ID,scope:SCOPES,
-        prompt:'',
-        callback:(resp)=>{
-          if(resp.error||!resp.access_token)return;
-          driveToken=resp.access_token;
-          lsS(TOKEN_EXPIRY_KEY,Date.now()+3500000);
-          setDriveStatus('synced','Drive');
-          driveSave(true);
-        }
-      });
-      tc.requestAccessToken({prompt:''});
-    }catch(e){}
-  } else if(isMobileDevice()){
-    doRedirectAuth(true);
-  }
+  ensureToken(false).then(ok=>{
+    if(ok){
+      document.getElementById('drive-auth-status').style.display='inline';
+      document.getElementById('drive-auth-btn').style.display='none';
+      setDriveStatus('synced','Drive');
+      driveSave(true);
+    }
+  });
 }
 
 // Auto-connect on page load and periodic save every 2 minutes
@@ -3226,13 +3277,17 @@ window.addEventListener('load',()=>{
   },120000);
 });
 
-document.getElementById('drive-auth-btn').addEventListener('click',()=>{
+document.getElementById('drive-auth-btn').addEventListener('click',async()=>{
   if(!CLIENT_ID){driveLog('No OAuth Client ID configured.');return;}
-  if(isMobileDevice()){
-    driveLog('Redirecting to Google sign-in…');
-    setTimeout(()=>doRedirectAuth(false),400);
+  driveLog('Connecting to Google…');
+  const ok=await ensureToken(true);
+  if(ok){
+    document.getElementById('drive-auth-status').style.display='inline';
+    document.getElementById('drive-auth-btn').style.display='none';
+    driveLog('Connected! Now choose a folder.');
+    setDriveStatus('synced','Drive');
   } else {
-    doPopupAuth();
+    driveLog('Connection failed. Please try again.');
   }
 });
 document.getElementById('drive-pick-btn').addEventListener('click',()=>{
@@ -3288,7 +3343,8 @@ document.getElementById('drive-pick-btn').addEventListener('click',()=>{
 });
 document.getElementById('drive-save-now-btn').addEventListener('click',()=>driveSave(false));
 document.getElementById('drive-load-btn').addEventListener('click',async()=>{
-  if(!driveToken){driveLog('Connect first.');return;}
+  const ok=await ensureToken(false);
+  if(!ok){driveLog('Not connected — click Connect first.');return;}
   driveLog('Loading from Drive…');
   try{
     let fid=driveFileId;
