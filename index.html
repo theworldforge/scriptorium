@@ -3235,6 +3235,7 @@ function doPopupAuth(){
   }
   driveToken=token;
   lsS(TOKEN_EXPIRY_KEY,Date.now()+3500000);
+  sessionStorage.removeItem('scrf-reconnect-attempted');
   setTimeout(()=>{
     const authBtn=document.getElementById('drive-auth-btn');
     const authStatus=document.getElementById('drive-auth-status');
@@ -3269,17 +3270,18 @@ document.addEventListener('visibilitychange',()=>{
 
 function silentReconnect(){
   if(!driveFolderId||!CLIENT_ID)return;
+  // Only attempt silent redirect once per session to avoid loops
+  if(sessionStorage.getItem('scrf-reconnect-attempted'))return;
+  sessionStorage.setItem('scrf-reconnect-attempted','1');
   if(isMobileDevice()){
-    // Mobile: use redirect with prompt:none — works transparently if already signed in to Google
     doRedirectAuth(true);
   } else {
-    // Desktop: use GIS popup silent refresh
     ensureToken(false).then(ok=>{
       if(ok){
         document.getElementById('drive-auth-status').style.display='inline';
         document.getElementById('drive-auth-btn').style.display='none';
         setDriveStatus('synced','Drive');
-        driveSave(true);
+        driveLoad(true);
       }
     });
   }
