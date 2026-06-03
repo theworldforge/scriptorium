@@ -2060,11 +2060,16 @@ function showMobPicker(items,onPick){
 }
 function renderMobScenes(){
   const ms=document.getElementById('mob-scenes');ms.innerHTML='';
-  // Header with manage hint
   const hdr=el('div','mob-list-header');
   const lbl=el('span');lbl.textContent='Scenes';
-  const hint=el('span');hint.style.cssText='font-size:11px;color:var(--text-faint);font-style:italic;';hint.textContent='Hold to rename';
-  hdr.append(lbl,hint);ms.appendChild(hdr);
+  const newBookBtn=el('button','mob-add-btn');newBookBtn.textContent='+ New Book';
+  newBookBtn.onclick=()=>{
+    const s={id:uid(),title:'New Book',children:[{id:uid(),title:'Chapter I',children:[
+      {id:uid(),title:'Scene 1',content:'',wordCount:0}
+    ]}]};
+    stories.push(s);saveAll();renderMobScenes();
+  };
+  hdr.append(lbl,newBookBtn);ms.appendChild(hdr);
   const scroll=el('div','mob-list-scroll');
   for(const s of stories){
     // Story row — tappable to rename
@@ -3237,9 +3242,9 @@ function doPopupAuth(){
     if(authStatus)authStatus.style.display='inline';
     setDriveStatus('synced','Drive');
     if(driveFolderName&&driveFolderId){
-      // Already have a folder — auto-save silently
-      driveLog('Reconnected to Drive. Auto-saving…');
-      driveSave(true);
+      // Always load on reconnect — Drive is the source of truth
+      driveLog('Reconnected. Loading latest from Drive…');
+      driveLoad(true);
       if(!wasSilent)toast('Drive reconnected ✓');
     } else {
       // Need folder — only open modal if user explicitly connected
@@ -3360,10 +3365,10 @@ document.getElementById('drive-pick-btn').addEventListener('click',()=>{
   else window.gapi.load('picker',openPicker);
 });
 document.getElementById('drive-save-now-btn').addEventListener('click',()=>driveSave(false));
-document.getElementById('drive-load-btn').addEventListener('click',async()=>{
-  const ok=await ensureToken(false);
-  if(!ok){driveLog('Not connected — click Connect first.');return;}
-  driveLog('Loading from Drive…');
+
+async function driveLoad(silent){
+  if(!driveToken){if(!silent)driveLog('Not connected.');return;}
+  if(!silent)driveLog('Loading from Drive…');
   try{
     let fid=driveFileId;
     if(!fid&&driveFolderId){
@@ -3371,12 +3376,18 @@ document.getElementById('drive-load-btn').addEventListener('click',async()=>{
       const r=await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)`,{headers:{Authorization:'Bearer '+driveToken}});
       const d=await r.json();if(d.files&&d.files.length)fid=d.files[0].id;
     }
-    if(!fid){driveLog('No backup found.');return;}
+    if(!fid){if(!silent)driveLog('No backup found.');return;}
     const r2=await fetch(`https://www.googleapis.com/drive/v3/files/${fid}?alt=media`,{headers:{Authorization:'Bearer '+driveToken}});
     const data=await r2.json();driveFileId=fid;
-    setAppData(data);driveLog('Loaded successfully.');toast('Loaded from Drive ✓');
-    closeModal('drive-modal');
-  }catch(e){driveLog('Load error: '+e.message);}
+    setAppData(data);
+    if(!silent){driveLog('Loaded successfully.');toast('Loaded from Drive ✓');closeModal('drive-modal');}
+  }catch(e){if(!silent)driveLog('Load error: '+e.message);}
+}
+
+document.getElementById('drive-load-btn').addEventListener('click',async()=>{
+  const ok=await ensureToken(false);
+  if(!ok){driveLog('Not connected — click Connect first.');return;}
+  driveLoad(false);
 });
 document.getElementById('local-export-btn').addEventListener('click',()=>{
   const blob=new Blob([JSON.stringify(getAppData(),null,2)],{type:'application/json'});
