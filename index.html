@@ -504,7 +504,7 @@ body.theme-celtic{--bg:#eef2e8;--surface:#e4ecd8;--surface-hover:rgba(80,140,60,
 
 <div id="body">
   <div id="left-panel">
-    <div class="panel-header"><span class="panel-label">Structure</span><button class="small-btn" id="btn-add-story">+ Story</button></div>
+    <div class="panel-header"><span class="panel-label">Structure</span><button class="small-btn" id="btn-add-story">+ New Book</button></div>
     <div id="tree-scroll"></div>
   </div>
 
@@ -1095,8 +1095,8 @@ function renderTree(){
     storyRow.onmouseleave=()=>{};
     const storyRen=el('button','node-act-btn');storyRen.textContent='✎';storyRen.title='Rename story';
     storyRen.onclick=e=>{e.stopPropagation();startRenameStory(storyLbl,story);};
-    const storyAdd=el('button','node-act-btn');storyAdd.textContent='+';storyAdd.title='Add book';
-    storyAdd.onclick=e=>{e.stopPropagation();const n={id:uid(),title:'New Book',children:[]};story.children=(story.children||[]).concat(n);saveAll();render();};
+    const storyAdd=el('button','node-act-btn');storyAdd.textContent='+ Book';storyAdd.title='Add book';storyAdd.style.fontSize='10px';
+    storyAdd.onclick=e=>{e.stopPropagation();const n={id:uid(),title:'Book Two',children:[]};story.children=(story.children||[]).concat(n);saveAll();render();};
     const storyDel=el('button','node-act-btn del');storyDel.textContent='×';storyDel.title='Delete story';
     storyDel.onclick=e=>{e.stopPropagation();if(confirm('Delete story "'+story.title+'" and everything in it?')){stories=stories.filter(s=>s.id!==story.id);saveAll();render();}};
     storyActs.append(storyRen,storyAdd,storyDel);
@@ -2971,7 +2971,9 @@ document.getElementById('btn-right').addEventListener('click',()=>{
 });
 document.getElementById('btn-focus').addEventListener('click',()=>{document.body.classList.toggle('focus-mode');document.getElementById('btn-focus').classList.toggle('active',document.body.classList.contains('focus-mode'));});
 document.getElementById('btn-add-story').addEventListener('click',()=>{
-  const s={id:uid(),title:'New Story',children:[{id:uid(),title:'Book One',children:[]}]};
+  const s={id:uid(),title:'New Book',children:[{id:uid(),title:'Chapter I',children:[
+    {id:uid(),title:'Scene 1',content:'',wordCount:0}
+  ]}]};
   stories.push(s);saveAll();render();
 });
 document.getElementById('btn-add-note').addEventListener('click',()=>{const n={id:uid(),title:'New Note',content:''};notes.push(n);selNoteId=n.id;render();});
@@ -3131,12 +3133,18 @@ function driveLog(msg){
 }
 async function driveSave(silent){
   if(!driveFolderId){if(!silent)driveLog('No folder set.');return;}
-  // Auto-refresh token silently before saving
-  const ok=await ensureToken(false);
-  if(!ok){
-    if(!silent)driveLog('Not connected — click Connect.');
-    setDriveStatus('error','Drive');
-    return;
+  // Check token validity
+  const expiry=localStorage.getItem(TOKEN_EXPIRY_KEY);
+  const tokenValid=driveToken&&expiry&&Date.now()<parseInt(expiry)-60000;
+  if(!tokenValid){
+    if(isMobileDevice()){
+      // Mobile: redirect to refresh — only do this if not silent to avoid redirect loops
+      if(!silent){doRedirectAuth(true);}
+      else{setDriveStatus('error','Drive');return;}
+    } else {
+      const ok=await ensureToken(false);
+      if(!ok){setDriveStatus('error','Drive');return;}
+    }
   }
   if(!silent)setDriveStatus('syncing','Saving…');
   try{
@@ -3256,14 +3264,20 @@ document.addEventListener('visibilitychange',()=>{
 
 function silentReconnect(){
   if(!driveFolderId||!CLIENT_ID)return;
-  ensureToken(false).then(ok=>{
-    if(ok){
-      document.getElementById('drive-auth-status').style.display='inline';
-      document.getElementById('drive-auth-btn').style.display='none';
-      setDriveStatus('synced','Drive');
-      driveSave(true);
-    }
-  });
+  if(isMobileDevice()){
+    // Mobile: use redirect with prompt:none — works transparently if already signed in to Google
+    doRedirectAuth(true);
+  } else {
+    // Desktop: use GIS popup silent refresh
+    ensureToken(false).then(ok=>{
+      if(ok){
+        document.getElementById('drive-auth-status').style.display='inline';
+        document.getElementById('drive-auth-btn').style.display='none';
+        setDriveStatus('synced','Drive');
+        driveSave(true);
+      }
+    });
+  }
 }
 
 // Auto-connect on page load and periodic save every 2 minutes
@@ -3280,14 +3294,18 @@ window.addEventListener('load',()=>{
 document.getElementById('drive-auth-btn').addEventListener('click',async()=>{
   if(!CLIENT_ID){driveLog('No OAuth Client ID configured.');return;}
   driveLog('Connecting to Google…');
-  const ok=await ensureToken(true);
-  if(ok){
-    document.getElementById('drive-auth-status').style.display='inline';
-    document.getElementById('drive-auth-btn').style.display='none';
-    driveLog('Connected! Now choose a folder.');
-    setDriveStatus('synced','Drive');
+  if(isMobileDevice()){
+    setTimeout(()=>doRedirectAuth(false),200);
   } else {
-    driveLog('Connection failed. Please try again.');
+    const ok=await ensureToken(true);
+    if(ok){
+      document.getElementById('drive-auth-status').style.display='inline';
+      document.getElementById('drive-auth-btn').style.display='none';
+      driveLog('Connected! Now choose a folder.');
+      setDriveStatus('synced','Drive');
+    } else {
+      driveLog('Connection failed. Please try again.');
+    }
   }
 });
 document.getElementById('drive-pick-btn').addEventListener('click',()=>{
