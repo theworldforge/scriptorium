@@ -3274,16 +3274,11 @@ function doPopupAuth(){
   if(!hash)return;
   const params=new URLSearchParams(hash.slice(1));
   const token=params.get('access_token');
+  if(!token)return;
   history.replaceState(null,'',window.location.pathname);
-  const wasSilent=sessionStorage.getItem('scrf-silent-auth');
-  sessionStorage.removeItem('scrf-silent-auth');
-  if(!token){
-    // Silent auth failed (no account session) — don't loop, just wait for user to connect manually
-    return;
-  }
   driveToken=token;
   lsS(TOKEN_EXPIRY_KEY,Date.now()+3500000);
-  sessionStorage.removeItem('scrf-reconnect-attempted');
+  sessionStorage.removeItem('scrf-mob-redirect');
   setTimeout(()=>{
     const authBtn=document.getElementById('drive-auth-btn');
     const authStatus=document.getElementById('drive-auth-status');
@@ -3291,16 +3286,12 @@ function doPopupAuth(){
     if(authStatus)authStatus.style.display='inline';
     setDriveStatus('synced','Drive');
     if(driveFolderName&&driveFolderId){
-      // Always load on reconnect — Drive is the source of truth
       driveLog('Reconnected. Loading latest from Drive…');
       driveLoad(true);
-      if(!wasSilent)toast('Drive reconnected ✓');
+      toast('Drive connected ✓');
     } else {
-      // Need folder — only open modal if user explicitly connected
-      if(!wasSilent){
-        driveLog('Connected. Now choose a folder.');
-        document.getElementById('drive-modal').classList.add('open');
-      }
+      driveLog('Connected. Now choose a folder.');
+      document.getElementById('drive-modal').classList.add('open');
     }
   },300);
 })();
@@ -3309,10 +3300,6 @@ function doPopupAuth(){
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='hidden'&&driveToken&&driveFolderId){
     driveSave(true);
-  }
-  // Auto-reconnect when returning to app if token expired
-  if(document.visibilityState==='visible'&&!driveToken&&driveFolderId&&CLIENT_ID){
-    silentReconnect();
   }
 });
 
@@ -3330,15 +3317,27 @@ function silentReconnect(){
   });
 }
 
-// Auto-connect on page load — desktop only, mobile requires manual connect
+// Periodic auto-save every 2 minutes if connected
+// Auto-connect on desktop only on page load
 window.addEventListener('load',()=>{
-  if(driveFolderId&&CLIENT_ID&&!isMobileDevice()){
-    setTimeout(silentReconnect,1500);
-  }
-  // Periodic auto-save every 2 minutes if connected
   setInterval(()=>{
     if(driveToken&&driveFolderId)driveSave(true);
   },120000);
+  // Desktop silent reconnect only
+  if(driveFolderId&&CLIENT_ID&&!isMobileDevice()){
+    setTimeout(silentReconnect,1500);
+  }
+  // Mobile: auto-connect via redirect only if not already connected
+  if(driveFolderId&&CLIENT_ID&&isMobileDevice()&&!driveToken){
+    const expiry=localStorage.getItem(TOKEN_EXPIRY_KEY);
+    // Only redirect if token is actually expired, not on every load
+    if(!expiry||Date.now()>parseInt(expiry)){
+      if(!sessionStorage.getItem('scrf-mob-redirect')){
+        sessionStorage.setItem('scrf-mob-redirect','1');
+        setTimeout(()=>doRedirectAuth(true),1000);
+      }
+    }
+  }
 });
 
 document.getElementById('drive-auth-btn').addEventListener('click',async()=>{
@@ -3414,6 +3413,7 @@ document.getElementById('drive-save-now-btn').addEventListener('click',()=>drive
 async function driveLoad(silent){
   if(!driveToken){if(!silent)driveLog('Not connected.');return;}
   if(!silent)driveLog('Loading from Drive…');
+  const savedMobTab=mobTab;
   try{
     let fid=driveFileId;
     if(!fid&&driveFolderId){
@@ -3425,6 +3425,8 @@ async function driveLoad(silent){
     const r2=await fetch(`https://www.googleapis.com/drive/v3/files/${fid}?alt=media`,{headers:{Authorization:'Bearer '+driveToken}});
     const data=await r2.json();driveFileId=fid;
     setAppData(data);
+    mobTab=savedMobTab;
+    renderMobile();
     if(!silent){driveLog('Loaded successfully.');toast('Loaded from Drive ✓');closeModal('drive-modal');}
   }catch(e){if(!silent)driveLog('Load error: '+e.message);}
 }
