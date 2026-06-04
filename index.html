@@ -1096,7 +1096,7 @@ function renderTree(){
     const storyRen=el('button','node-act-btn');storyRen.textContent='✎';storyRen.title='Rename story';
     storyRen.onclick=e=>{e.stopPropagation();startRenameStory(storyLbl,story);};
     const storyAdd=el('button','node-act-btn');storyAdd.textContent='+ Book';storyAdd.title='Add book';storyAdd.style.fontSize='10px';
-    storyAdd.onclick=e=>{e.stopPropagation();const n={id:uid(),title:'Book Two',children:[]};story.children=(story.children||[]).concat(n);saveAll();render();};
+    storyAdd.onclick=e=>{e.stopPropagation();const nums=['One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten'];const n={id:uid(),title:'Book '+(nums[(story.children||[]).length]||((story.children||[]).length+1)),children:[]};story.children=(story.children||[]).concat(n);saveAll();render();};
     const storyDel=el('button','node-act-btn del');storyDel.textContent='×';storyDel.title='Delete story';
     storyDel.onclick=e=>{e.stopPropagation();if(confirm('Delete story "'+story.title+'" and everything in it?')){stories=stories.filter(s=>s.id!==story.id);saveAll();render();}};
     storyActs.append(storyRen,storyAdd,storyDel);
