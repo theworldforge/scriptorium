@@ -3191,9 +3191,9 @@ async function driveSave(silent){
   const tokenValid=driveToken&&expiry&&Date.now()<parseInt(expiry)-60000;
   if(!tokenValid){
     if(isMobileDevice()){
-      // Mobile: redirect to refresh — only do this if not silent to avoid redirect loops
-      if(!silent){doRedirectAuth(true);}
-      else{setDriveStatus('error','Drive');return;}
+      setDriveStatus('error','Drive');
+      if(!silent)driveLog('Session expired — tap Connect to reconnect.');
+      return;
     } else {
       const ok=await ensureToken(false);
       if(!ok){setDriveStatus('error','Drive');return;}
@@ -3317,27 +3317,22 @@ document.addEventListener('visibilitychange',()=>{
 });
 
 function silentReconnect(){
-  if(!driveFolderId||!CLIENT_ID)return;
-  // Only attempt silent redirect once per session to avoid loops
+  if(!driveFolderId||!CLIENT_ID||isMobileDevice())return;
   if(sessionStorage.getItem('scrf-reconnect-attempted'))return;
   sessionStorage.setItem('scrf-reconnect-attempted','1');
-  if(isMobileDevice()){
-    doRedirectAuth(true);
-  } else {
-    ensureToken(false).then(ok=>{
-      if(ok){
-        document.getElementById('drive-auth-status').style.display='inline';
-        document.getElementById('drive-auth-btn').style.display='none';
-        setDriveStatus('synced','Drive');
-        driveLoad(true);
-      }
-    });
-  }
+  ensureToken(false).then(ok=>{
+    if(ok){
+      document.getElementById('drive-auth-status').style.display='inline';
+      document.getElementById('drive-auth-btn').style.display='none';
+      setDriveStatus('synced','Drive');
+      driveLoad(true);
+    }
+  });
 }
 
-// Auto-connect on page load and periodic save every 2 minutes
+// Auto-connect on page load — desktop only, mobile requires manual connect
 window.addEventListener('load',()=>{
-  if(driveFolderId&&CLIENT_ID){
+  if(driveFolderId&&CLIENT_ID&&!isMobileDevice()){
     setTimeout(silentReconnect,1500);
   }
   // Periodic auto-save every 2 minutes if connected
