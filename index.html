@@ -877,6 +877,30 @@ body.theme-celtic{--bg:#eef2e8;--surface:#e4ecd8;--surface-hover:rgba(80,140,60,
   </div>
 </div>
 
+<!-- NEW BOOK / SERIES MODAL -->
+<div class="modal-overlay" id="new-book-modal">
+  <div class="modal-box" style="width:min(380px,96vw);">
+    <div class="modal-title"><span>📖 New Project</span><button class="modal-close" onclick="document.getElementById('new-book-modal').classList.remove('open')">×</button></div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px;">
+      <button class="mbtn" id="nb-standalone-btn" style="text-align:left;padding:14px 16px;border-radius:8px;background:var(--surface);border:1px solid var(--border);">
+        <div style="font-weight:700;margin-bottom:3px;">📖 Standalone Novel</div>
+        <div style="font-size:12px;color:var(--text-faint);">A single self-contained book</div>
+      </button>
+      <button class="mbtn" id="nb-series-btn" style="text-align:left;padding:14px 16px;border-radius:8px;background:var(--surface);border:1px solid var(--border);">
+        <div style="font-weight:700;margin-bottom:3px;">📚 Series</div>
+        <div style="font-size:12px;color:var(--text-faint);">Multiple books in the same world — starts with Book One</div>
+      </button>
+    </div>
+    <div id="nb-title-row" style="display:none;">
+      <input id="nb-title-inp" class="minput" placeholder="Title…" style="width:100%;margin-bottom:10px;">
+      <div class="mbtn-row">
+        <button class="mbtn secondary" onclick="document.getElementById('nb-title-row').style.display='none';document.getElementById('nb-choice-row').style.display='';">Back</button>
+        <button class="mbtn primary" id="nb-create-btn">Create</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -2062,13 +2086,8 @@ function renderMobScenes(){
   const ms=document.getElementById('mob-scenes');ms.innerHTML='';
   const hdr=el('div','mob-list-header');
   const lbl=el('span');lbl.textContent='Scenes';
-  const newBookBtn=el('button','mob-add-btn');newBookBtn.textContent='+ New Book';
-  newBookBtn.onclick=()=>{
-    const s={id:uid(),title:'New Book',children:[{id:uid(),title:'Chapter I',children:[
-      {id:uid(),title:'Scene 1',content:'',wordCount:0}
-    ]}]};
-    stories.push(s);saveAll();renderMobScenes();
-  };
+  const newBookBtn=el('button','mob-add-btn');newBookBtn.textContent='+ New';
+  newBookBtn.onclick=()=>openNewBookModal();
   hdr.append(lbl,newBookBtn);ms.appendChild(hdr);
   const scroll=el('div','mob-list-scroll');
   for(const s of stories){
@@ -2975,12 +2994,41 @@ document.getElementById('btn-right').addEventListener('click',()=>{
   document.getElementById('btn-right').classList.toggle('active',!closed);
 });
 document.getElementById('btn-focus').addEventListener('click',()=>{document.body.classList.toggle('focus-mode');document.getElementById('btn-focus').classList.toggle('active',document.body.classList.contains('focus-mode'));});
-document.getElementById('btn-add-story').addEventListener('click',()=>{
-  const s={id:uid(),title:'New Book',children:[{id:uid(),title:'Chapter I',children:[
-    {id:uid(),title:'Scene 1',content:'',wordCount:0}
-  ]}]};
-  stories.push(s);saveAll();render();
+let _newBookType='standalone';
+function openNewBookModal(){
+  document.getElementById('new-book-modal').classList.add('open');
+  document.getElementById('nb-title-row').style.display='none';
+  document.getElementById('nb-title-inp').value='';
+}
+document.getElementById('nb-standalone-btn').addEventListener('click',()=>{
+  _newBookType='standalone';
+  document.getElementById('nb-title-inp').placeholder='Novel title…';
+  document.getElementById('nb-title-row').style.display='';
+  setTimeout(()=>document.getElementById('nb-title-inp').focus(),50);
 });
+document.getElementById('nb-series-btn').addEventListener('click',()=>{
+  _newBookType='series';
+  document.getElementById('nb-title-inp').placeholder='Series title…';
+  document.getElementById('nb-title-row').style.display='';
+  setTimeout(()=>document.getElementById('nb-title-inp').focus(),50);
+});
+document.getElementById('nb-create-btn').addEventListener('click',()=>{
+  const title=document.getElementById('nb-title-inp').value.trim()||(_newBookType==='series'?'New Series':'New Novel');
+  let s;
+  if(_newBookType==='series'){
+    s={id:uid(),title:title,children:[{id:uid(),title:'Book One',children:[
+      {id:uid(),title:'Chapter I',children:[{id:uid(),title:'Scene 1',content:'',wordCount:0}]}
+    ]}]};
+  } else {
+    s={id:uid(),title:title,children:[
+      {id:uid(),title:'Chapter I',children:[{id:uid(),title:'Scene 1',content:'',wordCount:0}]}
+    ]};
+  }
+  stories.push(s);saveAll();render();
+  document.getElementById('new-book-modal').classList.remove('open');
+  toast(title+' created ✓');
+});
+document.getElementById('btn-add-story').addEventListener('click',openNewBookModal);
 document.getElementById('btn-add-note').addEventListener('click',()=>{const n={id:uid(),title:'New Note',content:''};notes.push(n);selNoteId=n.id;render();});
 document.getElementById('btn-add-char').addEventListener('click',()=>{const ch={id:uid(),name:'New Character',role:'',summary:'',traits:'',notes:'',image:null};chars.push(ch);selCharId=ch.id;saveAll();renderChars();});
 
