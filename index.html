@@ -1249,11 +1249,15 @@ function toggleSmartQuotes(){
 }
 function applySmartQuotes(text,before){
   if(!smartQuotes)return text;
-  // British style: single outer quotes
-  if(text==='"'){return before.match(/\s|^/)?' \u201c':'\u201d';}
+  if(text==='"'){
+    // Opening after space, start, or opening bracket; closing otherwise
+    return before.match(/(^|[\s(\[{])$/)? '\u201c':'\u201d';
+  }
   if(text==="'"){
-    // apostrophe if preceded by letter, opening quote if preceded by space/start
-    return before.match(/[a-zA-Z]$/)?'\u2019':before.match(/\s|^|[(\[]$/)?'\u2018':'\u2019';
+    // Opening after space, start, opening bracket, or em/en dash
+    if(before.match(/(^|[\s(\[{\u2014\u2013])$/))return '\u2018';
+    // Apostrophe/closing in contractions and after letters/punctuation
+    return '\u2019';
   }
   return text;
 }
