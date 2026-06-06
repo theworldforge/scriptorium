@@ -1019,7 +1019,6 @@ async function gistLoad(silent){
 }
 
 async function gistAutoSync(){
-  // On startup: compare timestamps, load if Gist is newer
   const token=getGistToken();
   const gistId=getGistId();
   if(!token||!gistId)return;
@@ -1042,12 +1041,16 @@ async function gistAutoSync(){
       setAppData(parsed);
       if(ls)ls.textContent='Auto-loaded: '+new Date(gistTs).toLocaleTimeString();
       toast('Synced from Gist ✓');
+    } else if(localTs>gistTs&&localTs>0){
+      // Local is newer — push to Gist
+      await gistSave(true);
+      if(ls)ls.textContent='Auto-saved: '+new Date(localTs).toLocaleTimeString();
     } else {
-      if(ls)ls.textContent='Last saved: '+new Date(localTs).toLocaleTimeString();
+      if(ls)ls.textContent='In sync: '+new Date(localTs).toLocaleTimeString();
     }
     updateGistStatusBox();
   }catch(e){
-    // Silent fail — don't bother user
+    // Silent fail
   }
 }
 
@@ -1068,7 +1071,6 @@ function updateGistStatusBox(){
   }
 }
 
-// Connect button
 document.getElementById('gist-connect-btn').addEventListener('click',async()=>{
   const val=document.getElementById('gist-token-inp').value.trim();
   if(!val){driveLog('Please enter your GitHub token.');return;}
@@ -1076,7 +1078,22 @@ document.getElementById('gist-connect-btn').addEventListener('click',async()=>{
   localStorage.setItem(GIST_TOKEN_KEY,val);
   document.getElementById('gist-token-inp').value='';
   driveLog('Connecting…');
-  // Try to find existing Gist or create one
+  // Try to find existing Gist first
+  try{
+    const resp=await fetch(GIST_API+'?per_page=50',{headers:gistHeaders()});
+    if(resp.ok){
+      const gists=await resp.json();
+      const existing=gists.find(g=>g.files&&g.files[GIST_FILENAME]);
+      if(existing){
+        localStorage.setItem(GIST_ID_KEY,existing.id);
+        driveLog('Found existing Gist — syncing…');
+        await gistAutoSync();
+        return;
+      }
+    }
+  }catch(e){}
+  // No existing Gist — create one with current data
+  driveLog('No existing Gist found — creating new one…');
   await gistSave(false);
 });
 
