@@ -779,22 +779,23 @@ body.theme-celtic{--bg:#eef2e8;--surface:#e4ecd8;--surface-hover:rgba(80,140,60,
   </div>
 </div>
 
-<!-- DRIVE MODAL -->
+<!-- GIST SYNC MODAL -->
 <div class="modal-overlay" id="drive-modal">
   <div class="modal-box">
-    <div class="modal-title"><span>Google Drive Sync</span><button class="modal-close" onclick="closeModal('drive-modal')">×</button></div>
+    <div class="modal-title"><span>⚡ GitHub Gist Sync</span><button class="modal-close" onclick="closeModal('drive-modal')">×</button></div>
     <div class="drive-modal-inner">
-      <div style="font-size:13px;color:var(--text-muted);">Saves your entire project to Drive as <em>scriptorium-backup.json</em>. Auto-saves 8 seconds after you stop writing.</div>
-      <div id="drive-folder-display" style="display:none" class="drive-info-box"></div>
+      <div style="font-size:13px;color:var(--text-muted);">Syncs your project via a private GitHub Gist. Works on all devices with no login needed after setup.</div>
+      <div id="gist-status-box" style="display:none;background:var(--canvas);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px;"></div>
       <div id="drive-last-save" style="font-size:12px;color:var(--text-faint);"></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-        <span id="drive-auth-status" style="font-size:13px;font-weight:600;display:none;color:var(--drive-ok);">✓ Connected</span>
-        <button class="mbtn primary" id="drive-auth-btn">🔑 Connect Google Drive</button>
+      <div style="margin-bottom:6px;font-size:12px;color:var(--text-muted);font-weight:600;">GitHub Personal Access Token (gist scope)</div>
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <input type="password" id="gist-token-inp" class="minput" placeholder="ghp_…" style="flex:1;font-family:monospace;font-size:13px;">
+        <button class="mbtn primary" id="gist-connect-btn">Connect</button>
       </div>
+      <div style="font-size:11px;color:var(--text-faint);margin-bottom:12px;">Get one at github.com → Settings → Developer settings → Personal access tokens → tick <strong>gist</strong> scope only.</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="mbtn secondary" id="drive-pick-btn">📁 Choose folder</button>
         <button class="mbtn primary" id="drive-save-now-btn">💾 Save now</button>
-        <button class="mbtn secondary" id="drive-load-btn">⬇ Load from Drive</button>
+        <button class="mbtn secondary" id="drive-load-btn">⬇ Load latest</button>
       </div>
       <div id="drive-log" class="drive-log" style="display:none;"></div>
       <hr style="border:none;border-top:1px solid var(--border-light);">
@@ -907,67 +908,196 @@ body.theme-celtic{--bg:#eef2e8;--surface:#e4ecd8;--surface-hover:rgba(80,140,60,
 // ══════════════════════════════════════════════
 // CONFIG
 // ══════════════════════════════════════════════
-const CLIENT_ID='645135129548-hjijbb7btjtvudfjs1nskhn21vgkhq5a.apps.googleusercontent.com';
-const SCOPES='https://www.googleapis.com/auth/drive.file';
-const DRIVE_FILE_NAME='scriptorium-backup.json';
-const DRIVE_META_KEY='scrf-drive-meta';
+const CLIENT_ID=''; // legacy, unused
+const DRIVE_META_KEY='scrf-drive-meta'; // kept for migration
 const SK='scrf_stories', CK='scrf_chars', PLK='scrf_plotlines', COLK='scrf_cols', CARDK='scrf_cards', NK='scrf_notes', TK='scrf_theme', CWK='scrf_cw', WLK='scrf_world', SYNK='scrf_syn', SPLK='scrf_subplots';
 
-// ── GIS Token Client (persistent, auto-refreshing) ──
-let _tokenClient=null;
-let _tokenCallbackQueue=[];
+// ══════════════════════════════════════════════
+// GIST SYNC
+// ══════════════════════════════════════════════
+const GIST_TOKEN_KEY='scrf_gist_token';
+const GIST_ID_KEY='scrf_gist_id';
+const GIST_TS_KEY='scrf_gist_ts';
+const GIST_FILENAME='scriptorium-backup.json';
+const GIST_API='https://api.github.com/gists';
 
-function getTokenClient(){
-  return new Promise((resolve)=>{
-    function init(){
-      if(!_tokenClient){
-        _tokenClient=window.google.accounts.oauth2.initTokenClient({
-          client_id:CLIENT_ID,
-          scope:SCOPES,
-          callback:(resp)=>{
-            if(resp.access_token){
-              driveToken=resp.access_token;
-              lsS(TOKEN_EXPIRY_KEY,Date.now()+3500000);
-              setDriveStatus('synced','Drive');
-            }
-            _tokenCallbackQueue.forEach(cb=>cb(resp));
-            _tokenCallbackQueue=[];
-          }
-        });
-      }
-      resolve(_tokenClient);
-    }
-    if(window.google&&window.google.accounts){init();}
-    else{
-      const s=document.createElement('script');
-      s.src='https://accounts.google.com/gsi/client';
-      s.onload=init;
-      document.head.appendChild(s);
-    }
-  });
+let driveToken=null; // kept for compat — set to truthy when gist connected
+let autoSaveTimer=null;
+
+function getGistToken(){return localStorage.getItem(GIST_TOKEN_KEY)||'';}
+function getGistId(){return localStorage.getItem(GIST_ID_KEY)||'';}
+function getLocalTs(){return parseInt(localStorage.getItem(GIST_TS_KEY)||'0');}
+function setLocalTs(ts){localStorage.setItem(GIST_TS_KEY,String(ts));}
+
+function gistHeaders(){
+  return{'Authorization':'token '+getGistToken(),'Content-Type':'application/json','Accept':'application/vnd.github+json'};
 }
 
-async function ensureToken(interactive){
-  // Token still valid?
-  const expiry=localStorage.getItem(TOKEN_EXPIRY_KEY);
-  if(driveToken&&expiry&&Date.now()<parseInt(expiry)-60000)return true;
-  // Try silent refresh first
-  return new Promise(async(resolve)=>{
-    const tc=await getTokenClient();
-    _tokenCallbackQueue.push((resp)=>{
-      resolve(!!resp.access_token&&!resp.error);
-    });
-    try{
-      tc.requestAccessToken({prompt: interactive?'':'none'});
-    }catch(e){
-      // Silent failed — need interactive
-      if(!interactive){
-        _tokenCallbackQueue.pop();
-        resolve(false);
-      }
-    }
-  });
+function setDriveStatus(state,label){
+  const dot=document.getElementById('drive-dot');
+  const lbl=document.getElementById('drive-label');
+  if(dot){dot.style.background=state==='synced'?'var(--drive-ok)':state==='syncing'?'#f59e0b':'var(--drive-err)';}
+  if(lbl)lbl.textContent=label||'Gist';
 }
+
+function driveLog(msg){
+  const el=document.getElementById('drive-log');
+  if(!el)return;
+  el.style.display='block';
+  el.textContent=msg;
+}
+
+function scheduleAutoSave(){
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer=setTimeout(()=>gistSave(true),3000);
+}
+
+async function gistSave(silent){
+  const token=getGistToken();
+  if(!token){if(!silent)driveLog('No token — enter your GitHub token first.');return;}
+  if(!silent)setDriveStatus('syncing','Saving…');
+  const payload=JSON.stringify({...getAppData(),_savedAt:Date.now()},null,2);
+  const gistId=getGistId();
+  try{
+    let resp,data;
+    if(gistId){
+      // Update existing gist
+      resp=await fetch(GIST_API+'/'+gistId,{
+        method:'PATCH',headers:gistHeaders(),
+        body:JSON.stringify({files:{[GIST_FILENAME]:{content:payload}}})
+      });
+    } else {
+      // Create new private gist
+      resp=await fetch(GIST_API,{
+        method:'POST',headers:gistHeaders(),
+        body:JSON.stringify({description:'Scriptorium backup',public:false,files:{[GIST_FILENAME]:{content:payload}}})
+      });
+    }
+    if(resp.status===401){setDriveStatus('error','Token error');if(!silent)driveLog('Invalid token.');return;}
+    if(resp.status===409){if(!silent)driveLog('Conflict — try loading first.');setDriveStatus('error','Conflict');return;}
+    data=await resp.json();
+    localStorage.setItem(GIST_ID_KEY,data.id);
+    const ts=Date.now();setLocalTs(ts);
+    driveToken='connected';
+    setDriveStatus('synced','Gist');
+    const ls=document.getElementById('drive-last-save');
+    if(ls)ls.textContent='Last saved: '+new Date(ts).toLocaleTimeString();
+    if(!silent)driveLog('Saved ✓');
+    updateGistStatusBox();
+  }catch(e){
+    setDriveStatus('error','Error');
+    if(!silent)driveLog('Save error: '+e.message);
+  }
+}
+
+async function gistLoad(silent){
+  const token=getGistToken();
+  const gistId=getGistId();
+  if(!token){if(!silent)driveLog('No token.');return;}
+  if(!gistId){if(!silent)driveLog('No Gist found — save first from another device.');return;}
+  if(!silent)driveLog('Loading from Gist…');
+  try{
+    const resp=await fetch(GIST_API+'/'+gistId,{headers:gistHeaders()});
+    if(!resp.ok){driveLog('Load error: '+resp.status);return;}
+    const data=await resp.json();
+    const file=data.files[GIST_FILENAME];
+    if(!file){driveLog('No backup file found in Gist.');return;}
+    const parsed=JSON.parse(file.content);
+    const gistTs=parsed._savedAt||0;
+    setLocalTs(gistTs);
+    delete parsed._savedAt;
+    setAppData(parsed);
+    driveToken='connected';
+    setDriveStatus('synced','Gist');
+    const ls=document.getElementById('drive-last-save');
+    if(ls)ls.textContent='Loaded: '+new Date(gistTs).toLocaleTimeString();
+    if(!silent){driveLog('Loaded ✓');toast('Loaded from Gist ✓');closeModal('drive-modal');}
+    updateGistStatusBox();
+  }catch(e){
+    if(!silent)driveLog('Load error: '+e.message);
+  }
+}
+
+async function gistAutoSync(){
+  // On startup: compare timestamps, load if Gist is newer
+  const token=getGistToken();
+  const gistId=getGistId();
+  if(!token||!gistId)return;
+  try{
+    const resp=await fetch(GIST_API+'/'+gistId,{headers:gistHeaders()});
+    if(!resp.ok)return;
+    const data=await resp.json();
+    const file=data.files[GIST_FILENAME];
+    if(!file)return;
+    const parsed=JSON.parse(file.content);
+    const gistTs=parsed._savedAt||0;
+    const localTs=getLocalTs();
+    driveToken='connected';
+    setDriveStatus('synced','Gist');
+    const ls=document.getElementById('drive-last-save');
+    if(gistTs>localTs){
+      // Gist is newer — load it
+      setLocalTs(gistTs);
+      delete parsed._savedAt;
+      setAppData(parsed);
+      if(ls)ls.textContent='Auto-loaded: '+new Date(gistTs).toLocaleTimeString();
+      toast('Synced from Gist ✓');
+    } else {
+      if(ls)ls.textContent='Last saved: '+new Date(localTs).toLocaleTimeString();
+    }
+    updateGistStatusBox();
+  }catch(e){
+    // Silent fail — don't bother user
+  }
+}
+
+function updateGistStatusBox(){
+  const box=document.getElementById('gist-status-box');
+  if(!box)return;
+  const token=getGistToken();
+  const gistId=getGistId();
+  const ts=getLocalTs();
+  if(token&&gistId){
+    box.style.display='block';
+    box.innerHTML='<span style="color:var(--drive-ok);font-weight:700;">✓ Connected</span> &nbsp;·&nbsp; Gist ID: <code style="font-size:11px;">'+gistId.slice(0,8)+'…</code>'+(ts?'&nbsp;·&nbsp;Last sync: '+new Date(ts).toLocaleString():'');
+    // Show token masked
+    const inp=document.getElementById('gist-token-inp');
+    if(inp&&!inp.value)inp.placeholder='Token saved (••••'+token.slice(-4)+')';
+  } else {
+    box.style.display='none';
+  }
+}
+
+// Connect button
+document.getElementById('gist-connect-btn').addEventListener('click',async()=>{
+  const val=document.getElementById('gist-token-inp').value.trim();
+  if(!val){driveLog('Please enter your GitHub token.');return;}
+  if(!val.startsWith('ghp_')&&!val.startsWith('github_pat_')){driveLog('Token should start with ghp_ or github_pat_');return;}
+  localStorage.setItem(GIST_TOKEN_KEY,val);
+  document.getElementById('gist-token-inp').value='';
+  driveLog('Connecting…');
+  // Try to find existing Gist or create one
+  await gistSave(false);
+});
+
+document.getElementById('drive-save-now-btn').addEventListener('click',()=>gistSave(false));
+document.getElementById('drive-load-btn').addEventListener('click',()=>gistLoad(false));
+
+// Auto-sync on page load
+window.addEventListener('load',()=>{
+  updateGistStatusBox();
+  if(getGistToken()){
+    setTimeout(gistAutoSync,800);
+  }
+  // Periodic save every 2 minutes
+  setInterval(()=>{if(driveToken)gistSave(true);},120000);
+});
+
+// Save when leaving page
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='hidden'&&driveToken)gistSave(true);
+});
+
 
 // ══════════════════════════════════════════════
 // DEFAULT DATA
@@ -1032,16 +1162,11 @@ let mentionState=null, mentionIdx=0;
 let cellEditing={}, cardEditing={};
 
 // ══════════════════════════════════════════════
-// DRIVE STATE
+// SYNC STATE (Gist)
 // ══════════════════════════════════════════════
-let driveToken=null, driveFolderId=null, driveFolderName=null, driveFileId=null, autoSaveTimer=null;
-(function(){
-  try{const m=JSON.parse(localStorage.getItem(DRIVE_META_KEY)||'null');
-    if(m){driveFolderId=m.folderId;driveFolderName=m.folderName;driveFileId=m.fileId||null;}
-  }catch{}
-})();
-function persistMeta(ts){localStorage.setItem(DRIVE_META_KEY,JSON.stringify({folderId:driveFolderId,folderName:driveFolderName,fileId:driveFileId,lastSave:ts}));}
-function getLastSave(){try{const m=JSON.parse(localStorage.getItem(DRIVE_META_KEY)||'null');return m?.lastSave?new Date(m.lastSave).toLocaleString():'never';}catch{return'never';}}
+// driveToken is set to 'connected' string when Gist is active — used as truthy check
+// autoSaveTimer declared here, managed by Gist sync section
+
 
 // ══════════════════════════════════════════════
 // SAVE
@@ -1065,9 +1190,9 @@ function setAppData(d){
   saveAll();render();
 }
 function scheduleAutoSave(){
-  if(!driveToken||!driveFolderId)return;
+  if(!driveToken)return;
   clearTimeout(autoSaveTimer);
-  autoSaveTimer=setTimeout(()=>driveSave(true),3000);
+  autoSaveTimer=setTimeout(()=>gistSave(true),3000);
 }
 
 // ══════════════════════════════════════════════
@@ -2479,19 +2604,17 @@ function renderMobMore(){
     return btn;
   }
 
-  // Drive section
-  makeSection('Google Drive');
+  // Gist sync section
+  makeSection('Gist Sync');
   const isConnected=!!driveToken;
-  const driveStatusTxt=isConnected?'Connected — '+driveFolderName:'Not connected';
+  const gistId=getGistId();
   const statusEl=el('div');statusEl.style.cssText='font-size:13px;color:'+(isConnected?'var(--drive-ok)':'var(--text-faint)')+';margin-bottom:10px;padding:8px 12px;background:var(--canvas);border-radius:8px;border:1px solid var(--border-light);';
-  statusEl.textContent=(isConnected?'✓ ':'✗ ')+driveStatusTxt;
+  statusEl.textContent=isConnected?'✓ Connected'+(gistId?' (Gist ready)':''):'✗ Not connected — tap Sync to configure';
   scroll.appendChild(statusEl);
+  makeBtn('Sync Settings','⚡',()=>{closeModal('mob-more');document.getElementById('drive-modal').classList.add('open');});
   if(isConnected){
-    makeBtn('Save to Drive now','💾',()=>{driveSave(false);});
-    makeBtn('Load from Drive','⬇',()=>{document.getElementById('drive-load-btn').click();});
-    makeBtn('Reconnect Drive','🔑',()=>{setTimeout(()=>doRedirectAuth(false),200);},'color:var(--text-muted);');
-  } else {
-    makeBtn('Connect Google Drive','🔑',()=>{setTimeout(()=>doRedirectAuth(false),200);},'background:var(--accent);color:var(--accent-text);border-color:var(--accent);font-weight:700;');
+    makeBtn('Save now','💾',()=>gistSave(false));
+    makeBtn('Load latest','⬇',()=>gistLoad(false));
   }
 
   // Navigate
@@ -3176,270 +3299,6 @@ function getSwatch(rowId){const s=document.getElementById(rowId).querySelector('
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
 
-// ══════════════════════════════════════════════
-// DRIVE
-// ══════════════════════════════════════════════
-function setDriveStatus(state,text){
-  const btn=document.getElementById('drive-btn');
-  btn.className=state;
-  document.getElementById('drive-label').textContent=text||'Drive';
-}
-function driveLog(msg){
-  const log=document.getElementById('drive-log');
-  log.textContent=msg;log.style.display=msg?'block':'none';
-}
-async function driveSave(silent){
-  if(!driveFolderId){if(!silent)driveLog('No folder set.');return;}
-  // Check token validity
-  const expiry=localStorage.getItem(TOKEN_EXPIRY_KEY);
-  const tokenValid=driveToken&&expiry&&Date.now()<parseInt(expiry)-60000;
-  if(!tokenValid){
-    if(isMobileDevice()){
-      setDriveStatus('error','Drive');
-      if(!silent)driveLog('Session expired — tap Connect to reconnect.');
-      return;
-    } else {
-      const ok=await ensureToken(false);
-      if(!ok){setDriveStatus('error','Drive');return;}
-    }
-  }
-  if(!silent)setDriveStatus('syncing','Saving…');
-  try{
-    const payload=JSON.stringify(getAppData(),null,2);
-    const blob=new Blob([payload],{type:'application/json'});
-    let fid=driveFileId;
-    // Search for existing file
-    if(!fid){
-      const qParts=["name='"+DRIVE_FILE_NAME+"'","trashed=false"];
-      if(driveFolderId)qParts.push("'"+driveFolderId+"' in parents");
-      const q=qParts.join(' and ');
-      const r=await fetch('https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent(q)+'&fields=files(id)',{headers:{Authorization:'Bearer '+driveToken}});
-      const d=await r.json();if(d.files&&d.files.length)fid=d.files[0].id;
-    }
-    const metaObj=fid?{}:{name:DRIVE_FILE_NAME};
-    if(!fid&&driveFolderId)metaObj.parents=[driveFolderId];
-    const url=fid?'https://www.googleapis.com/upload/drive/v3/files/'+fid+'?uploadType=multipart':'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
-    const method=fid?'PATCH':'POST';
-    const meta=new Blob([JSON.stringify(metaObj)],{type:'application/json'});
-    const form=new FormData();form.append('metadata',meta);form.append('file',blob);
-    const r2=await fetch(url,{method,headers:{Authorization:'Bearer '+driveToken},body:form});
-    const d2=await r2.json();driveFileId=d2.id||fid;persistMeta(new Date().toISOString());
-    setDriveStatus('synced','Saved ✓');
-    if(!silent){driveLog('Saved at '+new Date().toLocaleTimeString());toast('Saved to Drive ✓');}
-    setTimeout(()=>setDriveStatus('synced','Drive'),3000);
-  }catch(e){setDriveStatus('error','Error');if(!silent)driveLog('Save failed: '+e.message);}
-}
-
-document.getElementById('drive-btn').addEventListener('click',()=>{
-  document.getElementById('drive-modal').classList.add('open');
-  if(driveFolderName){const fd=document.getElementById('drive-folder-display');fd.textContent='📁 '+driveFolderName;fd.style.display='block';}
-  document.getElementById('drive-last-save').textContent='Last saved: '+getLastSave();
-  if(driveToken){document.getElementById('drive-auth-status').style.display='inline';document.getElementById('drive-auth-btn').style.display='none';}
-});
-// ── Drive auth: popup on desktop, redirect on mobile ──
-const REDIRECT_URI=window.location.origin+window.location.pathname;
-const OAUTH_URL='https://accounts.google.com/o/oauth2/v2/auth';
-const TOKEN_EXPIRY_KEY='scrf-token-expiry';
-
-function isMobileDevice(){return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)||window.innerWidth<768;}
-
-function doRedirectAuth(silent){
-  const state=encodeURIComponent(JSON.stringify({redirect:true}));
-  const params=new URLSearchParams({
-    client_id:CLIENT_ID,redirect_uri:REDIRECT_URI,
-    response_type:'token',scope:SCOPES,
-    state,include_granted_scopes:'true',
-    // silent=true tries without prompting; if account is already signed in it works transparently
-    prompt:silent?'none':'select_account'
-  });
-  // Store that we're doing a silent redirect so we don't loop
-  if(silent)sessionStorage.setItem('scrf-silent-auth','1');
-  window.location.href=OAUTH_URL+'?'+params.toString();
-}
-
-function doPopupAuth(){
-  function init(){
-    const tc=window.google.accounts.oauth2.initTokenClient({client_id:CLIENT_ID,scope:SCOPES,callback:(resp)=>{
-      if(resp.error){driveLog('Auth error: '+resp.error);return;}
-      driveToken=resp.access_token;
-      lsS(TOKEN_EXPIRY_KEY,Date.now()+3500000); // ~58 min
-      document.getElementById('drive-auth-status').style.display='inline';
-      document.getElementById('drive-auth-btn').style.display='none';
-      driveLog('Connected! Now choose a folder.');setDriveStatus('synced','Drive');
-    }});tc.requestAccessToken();
-  }
-  if(!window.google){const s=document.createElement('script');s.src='https://accounts.google.com/gsi/client';s.onload=init;document.head.appendChild(s);}
-  else init();
-}
-
-// ── Handle redirect token return from Google ──
-(function handleRedirectToken(){
-  const hash=window.location.hash;
-  if(!hash)return;
-  const params=new URLSearchParams(hash.slice(1));
-  const token=params.get('access_token');
-  if(!token)return;
-  history.replaceState(null,'',window.location.pathname);
-  driveToken=token;
-  lsS(TOKEN_EXPIRY_KEY,Date.now()+3500000);
-  sessionStorage.removeItem('scrf-mob-redirect');
-  setTimeout(()=>{
-    const authBtn=document.getElementById('drive-auth-btn');
-    const authStatus=document.getElementById('drive-auth-status');
-    if(authBtn)authBtn.style.display='none';
-    if(authStatus)authStatus.style.display='inline';
-    setDriveStatus('synced','Drive');
-    if(driveFolderName&&driveFolderId){
-      driveLog('Reconnected. Loading latest from Drive…');
-      driveLoad(true);
-      toast('Drive connected ✓');
-    } else {
-      driveLog('Connected. Now choose a folder.');
-      document.getElementById('drive-modal').classList.add('open');
-    }
-  },300);
-})();
-
-// ── Save on visibility change (switching away from app) ──
-document.addEventListener('visibilitychange',()=>{
-  if(document.visibilityState==='hidden'&&driveToken&&driveFolderId){
-    driveSave(true);
-  }
-});
-
-function silentReconnect(){
-  if(!driveFolderId||!CLIENT_ID||isMobileDevice())return;
-  if(sessionStorage.getItem('scrf-reconnect-attempted'))return;
-  sessionStorage.setItem('scrf-reconnect-attempted','1');
-  ensureToken(false).then(ok=>{
-    if(ok){
-      document.getElementById('drive-auth-status').style.display='inline';
-      document.getElementById('drive-auth-btn').style.display='none';
-      setDriveStatus('synced','Drive');
-      driveLoad(true);
-    }
-  });
-}
-
-// Periodic auto-save every 2 minutes if connected
-// Auto-connect on desktop only on page load
-window.addEventListener('load',()=>{
-  setInterval(()=>{
-    if(driveToken&&driveFolderId)driveSave(true);
-  },120000);
-  // Desktop silent reconnect only
-  if(driveFolderId&&CLIENT_ID&&!isMobileDevice()){
-    setTimeout(silentReconnect,1500);
-  }
-  // Mobile: auto-connect via redirect only if not already connected
-  if(driveFolderId&&CLIENT_ID&&isMobileDevice()&&!driveToken){
-    const expiry=localStorage.getItem(TOKEN_EXPIRY_KEY);
-    // Only redirect if token is actually expired, not on every load
-    if(!expiry||Date.now()>parseInt(expiry)){
-      if(!sessionStorage.getItem('scrf-mob-redirect')){
-        sessionStorage.setItem('scrf-mob-redirect','1');
-        setTimeout(()=>doRedirectAuth(true),1000);
-      }
-    }
-  }
-});
-
-document.getElementById('drive-auth-btn').addEventListener('click',async()=>{
-  if(!CLIENT_ID){driveLog('No OAuth Client ID configured.');return;}
-  driveLog('Connecting to Google…');
-  if(isMobileDevice()){
-    setTimeout(()=>doRedirectAuth(false),200);
-  } else {
-    const ok=await ensureToken(true);
-    if(ok){
-      document.getElementById('drive-auth-status').style.display='inline';
-      document.getElementById('drive-auth-btn').style.display='none';
-      driveLog('Connected! Now choose a folder.');
-      setDriveStatus('synced','Drive');
-    } else {
-      driveLog('Connection failed. Please try again.');
-    }
-  }
-});
-document.getElementById('drive-pick-btn').addEventListener('click',()=>{
-  if(!driveToken){driveLog('Connect first.');return;}
-  if(isMobileDevice()){
-    // On mobile, Picker won't work — offer to save to Drive root or let user type folder name
-    driveLog('Finding your Drive folders…');
-    // Search for existing scriptorium folder or let user confirm saving to root
-    fetch('https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent("mimeType='application/vnd.google-apps.folder' and name='Scriptorium' and trashed=false")+'&fields=files(id,name)',
-      {headers:{Authorization:'Bearer '+driveToken}})
-      .then(r=>r.json()).then(data=>{
-        if(data.files&&data.files.length){
-          const f=data.files[0];
-          driveFolderId=f.id;driveFolderName=f.name;driveFileId=null;
-          const fd=document.getElementById('drive-folder-display');fd.textContent='📁 '+f.name;fd.style.display='block';
-          driveLog('Found Scriptorium folder. Saving…');driveSave(false);
-        } else {
-          // No Scriptorium folder — create one or save to root
-          if(confirm('No "Scriptorium" folder found in Drive.\n\nCreate one and save there?')){
-            fetch('https://www.googleapis.com/drive/v3/files',{
-              method:'POST',headers:{Authorization:'Bearer '+driveToken,'Content-Type':'application/json'},
-              body:JSON.stringify({name:'Scriptorium',mimeType:'application/vnd.google-apps.folder'})
-            }).then(r=>r.json()).then(f=>{
-              driveFolderId=f.id;driveFolderName=f.name;driveFileId=null;
-              const fd=document.getElementById('drive-folder-display');fd.textContent='📁 '+f.name;fd.style.display='block';
-              driveLog('Created Scriptorium folder. Saving…');driveSave(false);
-            }).catch(e=>driveLog('Error creating folder: '+e.message));
-          } else {
-            // Save to root
-            driveFolderId=null;driveFolderName='My Drive (root)';driveFileId=null;
-            const fd=document.getElementById('drive-folder-display');fd.textContent='📁 My Drive (root)';fd.style.display='block';
-            driveLog('Saving to Drive root…');driveSave(false);
-          }
-        }
-      }).catch(e=>driveLog('Error: '+e.message));
-    return;
-  }
-  // Desktop: use the full Picker
-  function openPicker(){
-    new window.google.picker.PickerBuilder()
-      .addView(new window.google.picker.DocsView(window.google.picker.ViewId.FOLDERS).setSelectFolderEnabled(true).setMimeTypes('application/vnd.google-apps.folder'))
-      .setOAuthToken(driveToken)
-      .setCallback(data=>{
-        if(data.action===window.google.picker.Action.PICKED){
-          const f=data.docs[0];driveFolderId=f.id;driveFolderName=f.name;driveFileId=null;
-          const fd=document.getElementById('drive-folder-display');fd.textContent='📁 '+f.name;fd.style.display='block';
-          driveLog('Folder selected. Saving now…');driveSave(false);
-        }
-      }).build().setVisible(true);
-  }
-  if(!window.gapi){const s=document.createElement('script');s.src='https://apis.google.com/js/api.js';s.onload=()=>window.gapi.load('picker',openPicker);document.head.appendChild(s);}
-  else window.gapi.load('picker',openPicker);
-});
-document.getElementById('drive-save-now-btn').addEventListener('click',()=>driveSave(false));
-
-async function driveLoad(silent){
-  if(!driveToken){if(!silent)driveLog('Not connected.');return;}
-  if(!silent)driveLog('Loading from Drive…');
-  const savedMobTab=mobTab;
-  try{
-    let fid=driveFileId;
-    if(!fid&&driveFolderId){
-      const q=`name='${DRIVE_FILE_NAME}' and '${driveFolderId}' in parents and trashed=false`;
-      const r=await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)`,{headers:{Authorization:'Bearer '+driveToken}});
-      const d=await r.json();if(d.files&&d.files.length)fid=d.files[0].id;
-    }
-    if(!fid){if(!silent)driveLog('No backup found.');return;}
-    const r2=await fetch(`https://www.googleapis.com/drive/v3/files/${fid}?alt=media`,{headers:{Authorization:'Bearer '+driveToken}});
-    const data=await r2.json();driveFileId=fid;
-    setAppData(data);
-    mobTab=savedMobTab;
-    renderMobile();
-    if(!silent){driveLog('Loaded successfully.');toast('Loaded from Drive ✓');closeModal('drive-modal');}
-  }catch(e){if(!silent)driveLog('Load error: '+e.message);}
-}
-
-document.getElementById('drive-load-btn').addEventListener('click',async()=>{
-  const ok=await ensureToken(false);
-  if(!ok){driveLog('Not connected — click Connect first.');return;}
-  driveLoad(false);
-});
 document.getElementById('local-export-btn').addEventListener('click',()=>{
   const blob=new Blob([JSON.stringify(getAppData(),null,2)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=DRIVE_FILE_NAME;a.click();toast('Exported ✓');
@@ -3887,7 +3746,7 @@ function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t
 // INIT
 // ══════════════════════════════════════════════
 applyTheme();
-if(driveFolderId)setDriveStatus('synced','Drive');
+if(getGistToken())setDriveStatus('synced','Gist');
 render();
 </script>
 </body>
