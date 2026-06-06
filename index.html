@@ -1082,6 +1082,7 @@ document.getElementById('gist-connect-btn').addEventListener('click',async()=>{
 
 document.getElementById('drive-save-now-btn').addEventListener('click',()=>gistSave(false));
 document.getElementById('drive-load-btn').addEventListener('click',()=>gistLoad(false));
+document.getElementById('drive-btn').addEventListener('click',()=>document.getElementById('drive-modal').classList.add('open'));
 
 // Auto-sync on page load
 window.addEventListener('load',()=>{
